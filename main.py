@@ -1,9 +1,11 @@
 from collections import Counter
 
+import matplotlib.pyplot as plt
 import torch
 from gqs.dataset import Dataset as GQSDataset
 from gqs.loader import QueryGraphBatch, get_query_data_loaders
 from gqs.sample import resolve_sample
+from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
 from sentence_transformers import SentenceTransformer
 from sklearn.mixture import GaussianMixture
 from tap import Tap
@@ -87,7 +89,7 @@ def main(args: Arguments):
             best_bic = float('inf')
             best_gmm = None
 
-            k_min = 2
+            k_min = 1
             k_max = target_embeddings.shape[0]
 
             # Find the optimal number of clusters (according to BIC)
@@ -103,7 +105,23 @@ def main(args: Arguments):
 
             print(f'Optimal number of clusters (k): {best_k}')
             print(f'BIC score: {best_bic}')
-            clusters = best_gmm.predict(target_embeddings)
+
+            labels = []
+            for emb_id, batch_id in enumerate(targets_mask.nonzero()[0]):
+                print("\t", emb_id, batch_texts[batch_id][:100])
+                labels.append(batch_texts[batch_id][:150])
+
+            Z = linkage(target_embeddings, method="average", metric="cosine")
+
+            # Plot the dendrogram to visually inspect possible clusters
+            plt.figure(figsize=(20, 7))
+            dendrogram(Z, labels=labels, orientation="left")
+            plt.xlabel("Query targets")
+            plt.ylabel("Euclidean Distance")
+            plt.subplots_adjust(left=0.0, right=0.3)
+            plt.show()
+
+            input("Press Enter to continue...")
 
 
 main(Arguments().parse_args())
