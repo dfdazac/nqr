@@ -1,29 +1,108 @@
 from collections import Counter
+from typing import Literal
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
+from datasets import load_dataset
 from gqs.dataset import Dataset as GQSDataset
 from gqs.loader import QueryGraphBatch, get_query_data_loaders
 from gqs.sample import resolve_sample
-from scipy.cluster.hierarchy import dendrogram, fcluster, linkage
+from scipy.cluster.hierarchy import dendrogram, linkage
 from sentence_transformers import SentenceTransformer
-from sklearn.mixture import GaussianMixture
 from tap import Tap
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+
+COMMAND_EMBED = "embed"
+COMMAND_GENERATE = "generate"
+COMMANDS = Literal[COMMAND_EMBED, COMMAND_GENERATE]
 
 
 class Arguments(Tap):
+    command: COMMANDS
+
     dataset: str = "fb15k237"
     train_data: list[str] = ["/1hop/0qual:1000"]
     valid_data: list[str] = ["/1hop/0qual:100"]
     test_data: list[str] = ["/1hop/0qual:100"]
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     num_answers_threshold: int = 10
 
-    batch_size: int = 4
+    batch_size: int = 64
     num_workers: int = 0
 
+    def configure(self):
+        self.add_argument("command")
 
-def main(args: Arguments):
+
+def get_embeddings_filename(embedding_model: str) -> str:
+    return f"{embedding_model.replace('/', '--')}-embeddings.pt"
+
+
+def embed(args: Arguments):
+    """Load descriptions of entities from a text file and embed them using a
+    SentenceTransformer model. File is expected to have one row per entity,
+    with the first column being the entity ID and the second its description,
+    separated by a tab character."""
+    def collate_fn(items: list[dict[str, str]]):
+        all_entities = []
+        all_descriptions = []
+        for it in items:
+            entity, description = it["text"].strip().split("\t")
+            all_entities.append(entity)
+            all_descriptions.append(description)
+
+        return {"entities": all_entities, "descriptions": all_descriptions}
+
+    entity_set = set()
+    all_embeddings = []
+    all_descriptions = []
+    entity_to_row = {}
+    num_rows = 0
+
+    embedder = SentenceTransformer(args.embedding_model)
+    text_files = ["entity2textlong.txt", "entity2text.txt"]
+
+    for file in text_files:
+        file_path = f"datasets/{args.dataset}/mapping/{file}"
+        dataset = load_dataset("text",
+                               data_files=file_path,
+                               split="train")
+        loader = DataLoader(dataset,
+                            batch_size=args.batch_size,
+                            num_workers=args.num_workers,
+                            collate_fn=collate_fn)
+
+        for i, batch in enumerate(tqdm(loader, desc=f"Embedding {file}")):
+            entities_to_embed = []
+            descriptions_to_embed = []
+            for entity, description in zip(batch["entities"], batch["descriptions"]):
+                if entity not in entity_set:
+                    entity_set.add(entity)
+                    entities_to_embed.append(entity)
+                    descriptions_to_embed.append(description)
+
+            if len(entities_to_embed) == 0:
+                continue
+
+            embeddings = embedder.encode(descriptions_to_embed)
+            all_embeddings.append(embeddings)
+            all_descriptions.extend(descriptions_to_embed)
+            entity_to_row.update({e: num_rows + i for i, e in enumerate(entities_to_embed)})
+            num_rows += len(entities_to_embed)
+
+    all_embeddings = np.concatenate(all_embeddings)
+    embeddings_filename = get_embeddings_filename(args.embedding_model)
+    torch.save({"embeddings": all_embeddings,
+                "descriptions": all_descriptions,
+                "entity_to_row": entity_to_row},
+               f"datasets/{args.dataset}/mapping/{embeddings_filename}")
+
+
+def generate(args: Arguments):
     # Load KG and query data
     dataset = GQSDataset(args.dataset)
     data_loaders, information = get_query_data_loaders(
@@ -35,18 +114,13 @@ def main(args: Arguments):
         num_workers=args.num_workers,
     )
 
-    # Load entity descriptions (long ones have priority)
-    entity_to_text = dict()
-    text_files = ["entity2textlong.txt", "entity2text.txt"]
-    for file in text_files:
-        with open(f"datasets/{args.dataset}/mapping/{file}") as f:
-            for line in f:
-                entity, text = line.strip().split("\t")
-                if entity not in entity_to_text:
-                    entity_to_text[entity] = text
+    embeddings_filename = get_embeddings_filename(args.embedding_model)
+    emb_data = torch.load(f"datasets/{args.dataset}/mapping/{embeddings_filename}")
+    embeddings = emb_data["embeddings"]
+    descriptions = emb_data["descriptions"]
+    entity_to_row = emb_data["entity_to_row"]
 
-    # Embed and cluster answers to queries
-    embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    # Cluster answers to queries
     for batch in data_loaders["train"]:
         batch: QueryGraphBatch
 
@@ -71,40 +145,16 @@ def main(args: Arguments):
         # Embed targets
         graph_ids = targets_above_threshold[0]
         target_ids = targets_above_threshold[1]
-        batch_texts = []
-        for t in target_ids:
-            entity = dataset.entity_mapper.inverse_lookup(t.item())
-            text = entity_to_text[entity]
-            batch_texts.append(text)
 
-        batch_embeddings = embedder.encode(batch_texts,
-                                           batch_size=args.batch_size)
+        entities = [dataset.entity_mapper.inverse_lookup(t.item()) for t in target_ids]
+        entity_rows = [entity_to_row[e] for e in entities]
+        batch_embeddings = embeddings[entity_rows]
+        batch_texts = [descriptions[r] for r in entity_rows]
 
         # Find clusters within answers to each query in batch
         for graph_id in graph_ids.unique():
             targets_mask = (graph_id == graph_ids).numpy()
             target_embeddings = batch_embeddings[targets_mask]
-            
-            best_k = None
-            best_bic = float('inf')
-            best_gmm = None
-
-            k_min = 1
-            k_max = target_embeddings.shape[0]
-
-            # Find the optimal number of clusters (according to BIC)
-            for k in range(k_min, min(k_max, 20) + 1):
-                gmm = GaussianMixture(n_components=k, random_state=0)
-                gmm.fit(target_embeddings)
-                bic = gmm.bic(target_embeddings)
-
-                if bic < best_bic:
-                    best_bic = bic
-                    best_k = k
-                    best_gmm = gmm
-
-            print(f'Optimal number of clusters (k): {best_k}')
-            print(f'BIC score: {best_bic}')
 
             labels = []
             for emb_id, batch_id in enumerate(targets_mask.nonzero()[0]):
@@ -124,4 +174,9 @@ def main(args: Arguments):
             input("Press Enter to continue...")
 
 
-main(Arguments().parse_args())
+if __name__ == "__main__":
+    args = Arguments().parse_args()
+    if args.command == COMMAND_EMBED:
+        embed(args)
+    elif args.command == COMMAND_GENERATE:
+        generate(args)
