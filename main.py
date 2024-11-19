@@ -27,7 +27,7 @@ class Arguments(Tap):
     train_data: list[str] = ["/1hop/0qual:1000"]
     valid_data: list[str] = ["/1hop/0qual:100"]
     test_data: list[str] = ["/1hop/0qual:100"]
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "dunzhang/stella_en_400M_v5"
 
     num_answers_threshold: int = 10
 
@@ -63,7 +63,8 @@ def embed(args: Arguments):
     entity_to_row = {}
     num_rows = 0
 
-    embedder = SentenceTransformer(args.embedding_model)
+    embedder = SentenceTransformer(args.embedding_model,
+                                   trust_remote_code=True)
     text_files = ["entity2textlong.txt", "entity2text.txt"]
 
     for file in text_files:
