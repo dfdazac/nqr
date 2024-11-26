@@ -13,6 +13,9 @@ from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from sklearn.neighbors import NearestNeighbors
+
+from shc import shc_linkage
 
 
 COMMAND_EMBED = "embed"
@@ -121,6 +124,9 @@ def generate(args: Arguments):
     descriptions = emb_data["descriptions"]
     entity_to_row = emb_data["entity_to_row"]
 
+    neighbors_search = NearestNeighbors(n_neighbors=5, metric="cosine")
+    neighbors_search.fit(embeddings)
+
     # Cluster answers to queries
     for batch in data_loaders["train"]:
         batch: QueryGraphBatch
@@ -162,11 +168,12 @@ def generate(args: Arguments):
                 print("\t", emb_id, batch_texts[batch_id][:100])
                 labels.append(batch_texts[batch_id][:150])
 
-            Z = linkage(target_embeddings, method="average", metric="cosine")
+            z, p_values = shc_linkage(target_embeddings, method="average", metric="cosine")
+            print(np.hstack([z, np.expand_dims(p_values, 1)]))
 
             # Plot the dendrogram to visually inspect possible clusters
             plt.figure(figsize=(20, 7))
-            dendrogram(Z, labels=labels, orientation="left")
+            dendrogram(z, labels=labels, orientation="left")
             plt.xlabel("Query targets")
             plt.ylabel("Euclidean Distance")
             plt.subplots_adjust(left=0.0, right=0.3)
