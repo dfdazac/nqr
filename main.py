@@ -168,8 +168,8 @@ def generate(args: Arguments):
                 print("\t", emb_id, batch_texts[batch_id][:100])
                 labels.append(batch_texts[batch_id][:150])
 
-            z, p_values = shc_linkage(target_embeddings, method="average", metric="cosine")
-            print(np.hstack([z, np.expand_dims(p_values, 1)]))
+            z = shc_linkage(target_embeddings)
+            print(z)
 
             # Plot the dendrogram to visually inspect possible clusters
             plt.figure(figsize=(20, 7))
