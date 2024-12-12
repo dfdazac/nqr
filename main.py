@@ -1,21 +1,18 @@
 from collections import Counter
 from typing import Literal
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from datasets import load_dataset
 from gqs.dataset import Dataset as GQSDataset
 from gqs.loader import QueryGraphBatch, get_query_data_loaders
 from gqs.sample import resolve_sample
-from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.cluster.hierarchy import linkage
 from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from sklearn.neighbors import NearestNeighbors
 
-from shc import shc_linkage
+from datasets import load_dataset
 
 
 COMMAND_EMBED = "embed"
@@ -124,11 +121,8 @@ def generate(args: Arguments):
     descriptions = emb_data["descriptions"]
     entity_to_row = emb_data["entity_to_row"]
 
-    neighbors_search = NearestNeighbors(n_neighbors=5, metric="cosine")
-    neighbors_search.fit(embeddings)
-
     # Cluster answers to queries
-    for batch in data_loaders["train"]:
+    for batch in tqdm(data_loaders["train"]):
         batch: QueryGraphBatch
 
         # Proceed only with queries that have a number of targets
@@ -151,35 +145,41 @@ def generate(args: Arguments):
 
         # Embed targets
         graph_ids = targets_above_threshold[0]
-        target_ids = targets_above_threshold[1]
+        all_target_ids = targets_above_threshold[1]
 
-        entities = [dataset.entity_mapper.inverse_lookup(t.item()) for t in target_ids]
+        entities = [dataset.entity_mapper.inverse_lookup(t.item()) for t in all_target_ids]
         entity_rows = [entity_to_row[e] for e in entities]
         batch_embeddings = embeddings[entity_rows]
-        batch_texts = [descriptions[r] for r in entity_rows]
 
         # Find clusters within answers to each query in batch
         for graph_id in graph_ids.unique():
             targets_mask = (graph_id == graph_ids).numpy()
+            target_ids = all_target_ids[targets_mask]
             target_embeddings = batch_embeddings[targets_mask]
 
-            labels = []
-            for emb_id, batch_id in enumerate(targets_mask.nonzero()[0]):
-                print("\t", emb_id, batch_texts[batch_id][:100])
-                labels.append(batch_texts[batch_id][:150])
+            z = linkage(target_embeddings, method="average", metric="cosine")
+            
+            # Compute a mapping from cluster number to data points in it
+            n = target_embeddings.shape[0]
+            cluster_map = {i: [i] for i in range(n)}
+            for i, row in enumerate(z):
+                cluster_1, cluster_2 = int(row[0]), int(row[1])
+                new_cluster = cluster_map[cluster_1] + cluster_map[cluster_2]
+                cluster_map[n + i] = new_cluster  # Update cluster map
 
-            z = shc_linkage(target_embeddings)
-            print(z)
+            # Traverse the hierarchy from top to bottom, collecting clusters
+            cluster_threshold = int(0.2 * n)
+            subsets = []
+            all_indices_set = {i for i in range(n)}
+            for i in range(len(z) - 1, -1, -1):
+                u, v, *_ = z[i].astype(int)
 
-            # Plot the dendrogram to visually inspect possible clusters
-            plt.figure(figsize=(20, 7))
-            dendrogram(z, labels=labels, orientation="left")
-            plt.xlabel("Query targets")
-            plt.ylabel("Euclidean Distance")
-            plt.subplots_adjust(left=0.0, right=0.3)
-            plt.show()
+                for cluster_id in (u, v):
+                    positives = cluster_map[cluster_id]
+                    if len(positives) >= cluster_threshold:
+                        negatives = all_indices_set.difference(set(positives))
 
-            input("Press Enter to continue...")
+                        subsets.append([positives, list(negatives)])
 
 
 if __name__ == "__main__":
