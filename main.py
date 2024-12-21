@@ -4,7 +4,7 @@ from typing import Literal
 import numpy as np
 import torch
 from gqs.dataset import Dataset as GQSDataset
-from gqs.loader import QueryGraphBatch, get_query_data_loaders
+from gqs.loader import TorchQuery, get_query_datasets
 from gqs.sample import resolve_sample
 from scipy.cluster.hierarchy import linkage
 from sentence_transformers import SentenceTransformer
@@ -104,15 +104,13 @@ def embed(args: Arguments):
 
 
 def generate(args: Arguments):
+    metadata = GQSDataset(args.dataset)
     # Load KG and query data
-    dataset = GQSDataset(args.dataset)
-    data_loaders, information = get_query_data_loaders(
-        dataset=dataset,
+    dataset, information = get_query_datasets(
+        metadata,
         train=map(resolve_sample, args.train_data),
         validation=map(resolve_sample, args.valid_data),
-        test=map(resolve_sample, args.test_data),
-        batch_size=32,
-        num_workers=args.num_workers,
+        test=map(resolve_sample, args.test_data)
     )
 
     embeddings_filename = get_embeddings_filename(args.embedding_model)
@@ -122,64 +120,46 @@ def generate(args: Arguments):
     entity_to_row = emb_data["entity_to_row"]
 
     # Cluster answers to queries
-    for batch in tqdm(data_loaders["train"]):
-        batch: QueryGraphBatch
+    for split in ["train", "validation", "test"]:
+        for query in tqdm(dataset[split], desc=f"Generating {split}"):
+            print(query)
+            query: TorchQuery
+            if split == "train":
+                target_ids = query.easy_targets
+            else:
+                target_ids = query.hard_targets
 
-        # Proceed only with queries that have a number of targets
-        # greater than the threshold
-        target_graph_ids = batch.easy_targets[0, :]
-        graph_id_to_num_targets = Counter(target_graph_ids.tolist())
-        graph_ids_above_threshold = []
-        for graph_id, num_targets in graph_id_to_num_targets.items():
-            if num_targets > args.num_answers_threshold:
-                graph_ids_above_threshold.append(graph_id)
-
-        if len(graph_ids_above_threshold) == 0:
-            # No query in this batch with num_targets above threshold, move on
-            continue
-
-        graph_ids_above_threshold = torch.tensor(graph_ids_above_threshold)
-        above_threshold_mask = graph_ids_above_threshold.unsqueeze(1) == target_graph_ids.unsqueeze(0)
-        above_threshold_mask = above_threshold_mask.any(dim=0)
-        targets_above_threshold = batch.easy_targets[:, above_threshold_mask]
-
-        # Embed targets
-        graph_ids = targets_above_threshold[0]
-        all_target_ids = targets_above_threshold[1]
-
-        entities = [dataset.entity_mapper.inverse_lookup(t.item()) for t in all_target_ids]
-        entity_rows = [entity_to_row[e] for e in entities]
-        batch_embeddings = embeddings[entity_rows]
-
-        # Find clusters within answers to each query in batch
-        for graph_id in graph_ids.unique():
-            targets_mask = (graph_id == graph_ids).numpy()
-            target_ids = all_target_ids[targets_mask]
-            target_embeddings = batch_embeddings[targets_mask]
-
-            z = linkage(target_embeddings, method="average", metric="cosine")
-            
-            # Compute a mapping from cluster number to data points in it
-            n = target_embeddings.shape[0]
-            cluster_map = {i: [i] for i in range(n)}
-            for i, row in enumerate(z):
-                cluster_1, cluster_2 = int(row[0]), int(row[1])
-                new_cluster = cluster_map[cluster_1] + cluster_map[cluster_2]
-                cluster_map[n + i] = new_cluster  # Update cluster map
-
-            # Traverse the hierarchy from top to bottom, collecting clusters
-            cluster_threshold = int(0.2 * n)
             subsets = []
-            all_indices_set = {i for i in range(n)}
-            for i in range(len(z) - 1, -1, -1):
-                u, v, *_ = z[i].astype(int)
+            if len(target_ids) >= args.num_answers_threshold:
+                # Embed targets
+                entities = [metadata.entity_mapper.inverse_lookup(t.item()) for t in target_ids]
+                entity_rows = [entity_to_row[e] for e in entities]
+                target_embeddings = embeddings[entity_rows]
 
-                for cluster_id in (u, v):
-                    positives = cluster_map[cluster_id]
-                    if len(positives) >= cluster_threshold:
-                        negatives = all_indices_set.difference(set(positives))
+                # Find clusters within answers to each query in batch
+                z = linkage(target_embeddings, method="average", metric="cosine")
 
-                        subsets.append([positives, list(negatives)])
+                # Compute a mapping from cluster number to data points in it
+                n = target_embeddings.shape[0]
+                cluster_map = {i: [i] for i in range(n)}
+                for i, row in enumerate(z):
+                    cluster_1, cluster_2 = int(row[0]), int(row[1])
+                    new_cluster = cluster_map[cluster_1] + cluster_map[cluster_2]
+                    cluster_map[n + i] = new_cluster  # Update cluster map
+
+                # Traverse the hierarchy from top to bottom, collecting clusters
+                cluster_threshold = int(0.2 * n)
+
+                all_indices_set = {i for i in range(n)}
+                for i in range(len(z) - 1, -1, -1):
+                    u, v, *_ = z[i].astype(int)
+
+                    for cluster_id in (u, v):
+                        positives = cluster_map[cluster_id]
+                        if len(positives) >= cluster_threshold:
+                            negatives = all_indices_set.difference(set(positives))
+
+                            subsets.append([positives, list(negatives)])
 
 
 if __name__ == "__main__":
