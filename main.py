@@ -1,32 +1,27 @@
-from collections import Counter
 from typing import Literal
+import os.path as osp
 
 import numpy as np
 import torch
-from gqs.dataset import Dataset as GQSDataset
-from gqs.loader import TorchQuery, get_query_datasets
-from gqs.sample import resolve_sample
 from scipy.cluster.hierarchy import linkage
 from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import pickle as pkl
 
 from datasets import load_dataset
 
 
 COMMAND_EMBED = "embed"
-COMMAND_GENERATE = "generate"
-COMMANDS = Literal[COMMAND_EMBED, COMMAND_GENERATE]
+COMMAND_CLUSTER = "cluster"
+COMMANDS = Literal[COMMAND_EMBED, COMMAND_CLUSTER]
 
 
 class Arguments(Tap):
     command: COMMANDS
 
-    dataset: str = "fb15k237"
-    train_data: list[str] = ["/1hop/0qual:1000"]
-    valid_data: list[str] = ["/1hop/0qual:100"]
-    test_data: list[str] = ["/1hop/0qual:100"]
+    data_path: str
     embedding_model: str = "dunzhang/stella_en_400M_v5"
 
     num_answers_threshold: int = 10
@@ -36,6 +31,7 @@ class Arguments(Tap):
 
     def configure(self):
         self.add_argument("command")
+        self.add_argument("data_path")
 
 
 def get_embeddings_filename(embedding_model: str) -> str:
@@ -68,7 +64,7 @@ def embed(args: Arguments):
     text_files = ["entity2textlong.txt", "entity2text.txt"]
 
     for file in text_files:
-        file_path = f"datasets/{args.dataset}/mapping/{file}"
+        file_path = osp.join(args.data_path, file)
         dataset = load_dataset("text",
                                data_files=file_path,
                                split="train")
@@ -97,42 +93,43 @@ def embed(args: Arguments):
 
     all_embeddings = np.concatenate(all_embeddings)
     embeddings_filename = get_embeddings_filename(args.embedding_model)
+    out_path = osp.join(args.data_path, embeddings_filename)
     torch.save({"embeddings": all_embeddings,
                 "descriptions": all_descriptions,
                 "entity_to_row": entity_to_row},
-               f"datasets/{args.dataset}/mapping/{embeddings_filename}")
+                out_path)
 
 
-def generate(args: Arguments):
-    metadata = GQSDataset(args.dataset)
-    # Load KG and query data
-    dataset, information = get_query_datasets(
-        metadata,
-        train=map(resolve_sample, args.train_data),
-        validation=map(resolve_sample, args.valid_data),
-        test=map(resolve_sample, args.test_data)
-    )
-
+def cluster(args: Arguments):
+    # Load entity embeddings
     embeddings_filename = get_embeddings_filename(args.embedding_model)
-    emb_data = torch.load(f"datasets/{args.dataset}/mapping/{embeddings_filename}")
+    emb_data = torch.load(osp.join(args.data_path, embeddings_filename))
     embeddings = emb_data["embeddings"]
-    descriptions = emb_data["descriptions"]
     entity_to_row = emb_data["entity_to_row"]
 
+    # Load queries
+    splits = ["train", "valid", "test"]
+    queries = dict()
+    answers = dict()
+    for split in splits:
+        with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
+            queries[split] = pkl.load(f)
+        kind = f"-hard" if split != "train" else ""
+        with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
+            answers[split] = pkl.load(f)
+    with open(osp.join(args.data_path, "id2ent.pkl"), "rb") as f:
+        id2ent = pkl.load(f)
+
     # Cluster answers to queries
-    for split in ["train", "validation", "test"]:
-        for query in tqdm(dataset[split], desc=f"Generating {split}"):
+    for split in splits:
+        for query in tqdm(queries[split][('e', ('r',))], desc=f"Generating {split}"):
             print(query)
-            query: TorchQuery
-            if split == "train":
-                target_ids = query.easy_targets
-            else:
-                target_ids = query.hard_targets
+            target_ids = answers[split][query]
 
             subsets = []
             if len(target_ids) >= args.num_answers_threshold:
                 # Embed targets
-                entities = [metadata.entity_mapper.inverse_lookup(t.item()) for t in target_ids]
+                entities = [id2ent[t] for t in target_ids]
                 entity_rows = [entity_to_row[e] for e in entities]
                 target_embeddings = embeddings[entity_rows]
 
@@ -166,5 +163,5 @@ if __name__ == "__main__":
     args = Arguments().parse_args()
     if args.command == COMMAND_EMBED:
         embed(args)
-    elif args.command == COMMAND_GENERATE:
-        generate(args)
+    elif args.command == COMMAND_CLUSTER:
+        cluster(args)
