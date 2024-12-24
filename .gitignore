@@ -163,6 +163,8 @@ cython_debug/
 
 .isort.cfg
 
+data/*
+~data/.gitkeep
 datasets/*
 !datasets/.gitkeep
 
