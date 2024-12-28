@@ -3,12 +3,13 @@ import os.path as osp
 
 import numpy as np
 import torch
-from scipy.cluster.hierarchy import linkage
+from scipy.cluster.hierarchy import linkage, dendrogram
 from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import pickle as pkl
+import matplotlib.pyplot as plt
 
 from datasets import load_dataset
 
@@ -25,11 +26,13 @@ class Arguments(Tap):
     embedding_model: str = "dunzhang/stella_en_400M_v5"
 
     num_answers_threshold: int = 10
+    plot: bool = False
 
     batch_size: int = 64
     num_workers: int = 0
 
     def configure(self):
+        # Positional arguments
         self.add_argument("command")
         self.add_argument("data_path")
 
@@ -105,6 +108,7 @@ def cluster(args: Arguments):
     embeddings_filename = get_embeddings_filename(args.embedding_model)
     emb_data = torch.load(osp.join(args.data_path, embeddings_filename))
     embeddings = emb_data["embeddings"]
+    descriptions = emb_data["descriptions"]
     entity_to_row = emb_data["entity_to_row"]
 
     # Load queries
@@ -119,22 +123,45 @@ def cluster(args: Arguments):
             answers[split] = pkl.load(f)
     with open(osp.join(args.data_path, "id2ent.pkl"), "rb") as f:
         id2ent = pkl.load(f)
+    with open(osp.join(args.data_path, "id2rel.pkl"), "rb") as f:
+        id2rel = pkl.load(f)
 
     # Cluster answers to queries
     for split in splits:
-        for query in tqdm(queries[split][('e', ('r',))], desc=f"Generating {split}"):
-            print(query)
-            target_ids = answers[split][query]
+        subsets = dict()
+        all_queries = queries[split][('e', ('r',))]
 
-            subsets = []
+        for query in tqdm(all_queries, desc=f"Generating {split}"):
+            target_ids = list(answers[split][query])
+
+            query_subsets = []
             if len(target_ids) >= args.num_answers_threshold:
+                subject, predicate = query[0], query[1][0]
+                if args.plot:
+                    print(query)
+                    print(f"Subject: [{id2ent[subject]}] {descriptions[entity_to_row[id2ent[subject]]][:150]}")
+                    print(f"Predicate: {id2rel[predicate]}")
+
                 # Embed targets
                 entities = [id2ent[t] for t in target_ids]
                 entity_rows = [entity_to_row[e] for e in entities]
                 target_embeddings = embeddings[entity_rows]
+                labels = [descriptions[r][:150] for r in entity_rows]
+                if args.plot:
+                    for ent_id, l in zip(entities, labels):
+                        print(f"\t [{ent_id}] {l}")
 
                 # Find clusters within answers to each query in batch
                 z = linkage(target_embeddings, method="average", metric="cosine")
+
+                # Plot the dendrogram to visually inspect possible clusters
+                if args.plot:
+                    plt.figure(figsize=(20, 7))
+                    dendrogram(z, labels=labels, orientation="left")
+                    plt.xlabel("Query targets")
+                    plt.ylabel("Euclidean Distance")
+                    plt.subplots_adjust(left=0.0, right=0.3)
+                    plt.show()
 
                 # Compute a mapping from cluster number to data points in it
                 n = target_embeddings.shape[0]
@@ -144,7 +171,7 @@ def cluster(args: Arguments):
                     new_cluster = cluster_map[cluster_1] + cluster_map[cluster_2]
                     cluster_map[n + i] = new_cluster  # Update cluster map
 
-                # Traverse the hierarchy from top to bottom, collecting clusters
+                # Traverse the hierarchy from top to bottom collecting clusters
                 cluster_threshold = int(0.2 * n)
 
                 all_indices_set = {i for i in range(n)}
@@ -152,11 +179,27 @@ def cluster(args: Arguments):
                     u, v, *_ = z[i].astype(int)
 
                     for cluster_id in (u, v):
-                        positives = cluster_map[cluster_id]
-                        if len(positives) >= cluster_threshold:
-                            negatives = all_indices_set.difference(set(positives))
+                        pos_idx = cluster_map[cluster_id]
+                        if len(pos_idx) >= cluster_threshold:
+                            neg_idx = all_indices_set.difference(set(pos_idx))
 
-                            subsets.append([positives, list(negatives)])
+                            positives = [target_ids[i] for i in pos_idx]
+                            negatives = [target_ids[i] for i in neg_idx]
+
+                            query_subsets.append((positives, negatives))
+
+            subsets[query] = query_subsets
+            if args.plot and len(query_subsets) > 0:
+                for subset in query_subsets:
+                    for kind, ids in zip(("Positives", "Negatives"), subset):
+                        print(kind)
+                        for id in ids:
+                            print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
+
+                a = input("Press enter to continue")
+
+        with open(osp.join(args.data_path, f"{split}-subsets.pkl"), "wb") as f:
+            pkl.dump(subsets, f)
 
 
 if __name__ == "__main__":
