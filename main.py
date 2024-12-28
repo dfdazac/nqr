@@ -201,6 +201,10 @@ def cluster(args: Arguments):
         with open(osp.join(args.data_path, f"{split}-subsets.pkl"), "wb") as f:
             pkl.dump(subsets, f)
 
+        queries_with_subsets = sum(map(lambda s: len(s) > 0, subsets.values()))
+        print(f"Generated subsets for {queries_with_subsets:,} out of {len(all_queries):,} queries")
+        print(f"Total number of subsets: {sum(map(len, subsets.values())):,}")
+
 
 if __name__ == "__main__":
     args = Arguments().parse_args()
