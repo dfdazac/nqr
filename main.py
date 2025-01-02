@@ -204,6 +204,11 @@ def cluster(args: Arguments):
         queries_with_subsets = sum(map(lambda s: len(s) > 0, subsets.values()))
         print(f"Generated subsets for {queries_with_subsets:,} out of {len(all_queries):,} queries")
         print(f"Total number of subsets: {sum(map(len, subsets.values())):,}")
+        total_examples = 0
+        for subset_list in subsets.values():
+            for subset in subset_list:
+                total_examples += len(subset[0])  # subset[0] contains the positives
+        print(f"Total number of examples: {total_examples:,}")
 
 
 if __name__ == "__main__":
