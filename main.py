@@ -1,17 +1,16 @@
-from typing import Literal
 import os.path as osp
+import pickle as pkl
+from typing import Literal
 
 import numpy as np
 import torch
-from scipy.cluster.hierarchy import linkage, dendrogram
+from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import pickle as pkl
-import matplotlib.pyplot as plt
 
-from datasets import load_dataset
+from quack.feedback import FeedbackGenerator
 
 
 COMMAND_EMBED = "embed"
@@ -126,6 +125,11 @@ def cluster(args: Arguments):
     with open(osp.join(args.data_path, "id2rel.pkl"), "rb") as f:
         id2rel = pkl.load(f)
 
+    # Initialize FeedbackGenerator
+    feedback_generator = FeedbackGenerator(embeddings,entity_to_row, id2ent,
+                                           id2rel, args.num_answers_threshold,
+                                           args.plot)
+
     # Cluster answers to queries
     for split in splits:
         subsets = dict()
@@ -133,62 +137,10 @@ def cluster(args: Arguments):
 
         for query in tqdm(all_queries, desc=f"Generating {split}"):
             target_ids = list(answers[split][query])
-
-            query_subsets = []
-            if len(target_ids) >= args.num_answers_threshold:
-                subject, predicate = query[0], query[1][0]
-                if args.plot:
-                    print(query)
-                    print(f"Subject: [{id2ent[subject]}] {descriptions[entity_to_row[id2ent[subject]]][:150]}")
-                    print(f"Predicate: {id2rel[predicate]}")
-
-                # Embed targets
-                entities = [id2ent[t] for t in target_ids]
-                entity_rows = [entity_to_row[e] for e in entities]
-                target_embeddings = embeddings[entity_rows]
-                labels = [descriptions[r][:150] for r in entity_rows]
-                if args.plot:
-                    for ent_id, l in zip(entities, labels):
-                        print(f"\t [{ent_id}] {l}")
-
-                # Find clusters within answers to each query in batch
-                z = linkage(target_embeddings, method="average", metric="cosine")
-
-                # Plot the dendrogram to visually inspect possible clusters
-                if args.plot:
-                    plt.figure(figsize=(20, 7))
-                    dendrogram(z, labels=labels, orientation="left")
-                    plt.xlabel("Query targets")
-                    plt.ylabel("Euclidean Distance")
-                    plt.subplots_adjust(left=0.0, right=0.3)
-                    plt.show()
-
-                # Compute a mapping from cluster number to data points in it
-                n = target_embeddings.shape[0]
-                cluster_map = {i: [i] for i in range(n)}
-                for i, row in enumerate(z):
-                    cluster_1, cluster_2 = int(row[0]), int(row[1])
-                    new_cluster = cluster_map[cluster_1] + cluster_map[cluster_2]
-                    cluster_map[n + i] = new_cluster  # Update cluster map
-
-                # Traverse the hierarchy from top to bottom collecting clusters
-                cluster_threshold = int(0.2 * n)
-
-                all_indices_set = {i for i in range(n)}
-                for i in range(len(z) - 1, -1, -1):
-                    u, v, *_ = z[i].astype(int)
-
-                    for cluster_id in (u, v):
-                        pos_idx = cluster_map[cluster_id]
-                        if len(pos_idx) >= cluster_threshold:
-                            neg_idx = all_indices_set.difference(set(pos_idx))
-
-                            positives = [target_ids[i] for i in pos_idx]
-                            negatives = [target_ids[i] for i in neg_idx]
-
-                            query_subsets.append((positives, negatives))
-
+            query_subsets = feedback_generator.generate(query, target_ids,
+                                                        descriptions)
             subsets[query] = query_subsets
+
             if args.plot and len(query_subsets) > 0:
                 for subset in query_subsets:
                     for kind, ids in zip(("Positives", "Negatives"), subset):
