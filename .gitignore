@@ -168,3 +168,4 @@ data/*
 datasets/*
 !datasets/.gitkeep
 
+checkpoints/
