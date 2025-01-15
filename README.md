@@ -5,7 +5,7 @@ This repository contains an implementation for training and models for approxima
 We assume a given knowledge graph and a dataset of queries and their answers. The process for training and evaluating the model is as follows:
 
 1. **Automatic preference generation**: Since it is impractical to manually specify preferences for queries at a large scale, we automatically generate preferences for a subset of complex queries. We use a clustering algorithm to group similar answers and select the most frequent entities in each cluster as preferences.
-2. **Training QA model**: We make us of QTO, a state-of-the-art model for complex query answering, to obtain rankings of entities for variables in the query. This step provides answers to a query **without** considering the preferences.
+2. **Training QA model**: We make use of QTO, a state-of-the-art model for complex query answering, to obtain rankings of entities for variables in the query. This step provides answers to a query **without** considering the preferences.
 3. **Training and evaluating the preference model**: Using the preferences generated in step 1, we train a re-ranking model for modifying the predictions of QTO (obtained in step 2) to align with the preferences. We evaluate the model on a held-out set of queries.
 
 ## 1. Automatic Preference Generation
@@ -22,7 +22,7 @@ We implement this in two steps: (1) **embedding** entities based on their textua
 This command processes textual descriptions of entities and generates vector embeddings using a pre-trained sentence transformer. The computed embeddings, along with the entity-to-row mappings and descriptions, are saved in a .pt file under the `datasets/<dataset_name>/mapping/` directory. These embeddings are later used for clustering. To embed entity descriptions:
 
 ```bash
-python main.py embed --dataset <dataset_name> --embedding_model <model_name>
+python query.py embed --dataset <dataset_name> --embedding_model <model_name>
 ```
 
 #### Options:
@@ -35,14 +35,14 @@ python main.py embed --dataset <dataset_name> --embedding_model <model_name>
 #### Example:
 
 ```bash
-python main.py embed --dataset fb15k237 --embedding_model all-MiniLM-L6-v2
+python query.py embed --dataset fb15k237 --embedding_model all-MiniLM-L6-v2
 ```
 
 ### Generating Clusters
 To cluster answers to queries:
 
 ```bash
-python main.py generate --dataset <dataset_name> --num_answers_threshold <threshold>
+python query.py generate --dataset <dataset_name> --num_answers_threshold <threshold>
 ```
 
 #### Options:
@@ -54,7 +54,7 @@ python main.py generate --dataset <dataset_name> --num_answers_threshold <thresh
 #### Example:
 
 ```bash
-python main.py generate --dataset fb15k237 --num_answers_threshold 15
+python query.py generate --dataset fb15k237 --num_answers_threshold 15
 ```
 
 ## 2. Training QA Model
@@ -81,5 +81,10 @@ python -m quack.qto.complex train --data_path data/fb15k237-betae --score_rel Tr
 python -m quack.qto.complex train --data_path data/nell-betae --score_rel True --model ComplEx --rank 1000 --learning_rate 0.1 --batch_size 1000 --lmbda 0.05 --w_rel 0 --max_epochs 100 
 ```
 
+### 2.3 Evaluating QTO with the trained ComplEx model
+
+```bash
+python -m quack.qto.query
+```
 
 
