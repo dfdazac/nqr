@@ -22,7 +22,7 @@ We implement this in two steps: (1) **embedding** entities based on their textua
 This command processes textual descriptions of entities and generates vector embeddings using a pre-trained sentence transformer. The computed embeddings, along with the entity-to-row mappings and descriptions, are saved in a .pt file under the `datasets/<dataset_name>/mapping/` directory. These embeddings are later used for clustering. To embed entity descriptions:
 
 ```bash
-python query.py embed --dataset <dataset_name> --embedding_model <model_name>
+python -m quack embed --dataset <dataset_name> --embedding_model <model_name>
 ```
 
 #### Options:
@@ -35,14 +35,14 @@ python query.py embed --dataset <dataset_name> --embedding_model <model_name>
 #### Example:
 
 ```bash
-python query.py embed --dataset fb15k237 --embedding_model all-MiniLM-L6-v2
+python -m quack embed --dataset fb15k237 --embedding_model all-MiniLM-L6-v2
 ```
 
 ### Generating Clusters
 To cluster answers to queries:
 
 ```bash
-python query.py generate --dataset <dataset_name> --num_answers_threshold <threshold>
+python -m quack generate --dataset <dataset_name> --num_answers_threshold <threshold>
 ```
 
 #### Options:
@@ -54,7 +54,7 @@ python query.py generate --dataset <dataset_name> --num_answers_threshold <thres
 #### Example:
 
 ```bash
-python query.py generate --dataset fb15k237 --num_answers_threshold 15
+python -m quack generate --dataset fb15k237 --num_answers_threshold 15
 ```
 
 ## 2. Training QA Model

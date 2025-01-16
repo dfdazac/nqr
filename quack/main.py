@@ -163,9 +163,13 @@ def cluster(args: Arguments):
         print(f"Total number of examples: {total_examples:,}")
 
 
-if __name__ == "__main__":
+def main():
     args = Arguments().parse_args()
     if args.command == COMMAND_EMBED:
         embed(args)
     elif args.command == COMMAND_CLUSTER:
         cluster(args)
+
+
+if __name__ == "__main__":
+    main()
