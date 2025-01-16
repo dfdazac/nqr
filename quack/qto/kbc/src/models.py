@@ -480,6 +480,29 @@ class ComplEx(KBCModel):
                 torch.sqrt(rel[0] ** 2 + rel[1] ** 2),
                 torch.sqrt(rhs[0] ** 2 + rhs[1] ** 2))
 
+    def compute_similarities(self, queries: torch.Tensor) -> torch.Tensor:
+        """Compute similarities based on *complex* cosine similarity"""
+        # Separate real and imaginary parts
+        real, imag = torch.chunk(self.embeddings[0].weight, chunks=2, dim=-1)
+        complex_embeddings = real + 1j * imag
+        # Shape: (n, k)
+
+        query_embeddings = complex_embeddings[queries]
+        # Shape: (len(queries), k)
+
+        dot_product = query_embeddings @ complex_embeddings.T.conj()
+        # Shape: (len(queries), n)
+
+        norm_embeddings = torch.norm(complex_embeddings, dim=1, p=2)
+        # Shape: (n,)
+        norm_queries = norm_embeddings[queries]
+        # Shape: (len(queries),)
+
+        similarities = dot_product / (norm_queries[:, None] * norm_embeddings[None, :])
+
+        return torch.abs(similarities)
+
+
 class TuckER(KBCModel):
     def __init__(self, sizes, rank_e, rank_r, init_size=1e-3, dp=0.5):
         super(TuckER, self).__init__()

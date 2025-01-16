@@ -64,6 +64,7 @@ class KGReasoning(nn.Module):
         self.query_name_dict = query_name_dict
         self.name_answer_dict = name_answer_dict
         self.neg_scale = args.neg_scale
+        self.kbc_model = load_kbc(args.kbc_path, device, args.nentity, args.nrelation)
         dataset_name = args.data_path.split('/')[1].split('-')[0]
         if args.data_path.split('/')[1].split('-')[1] == "237":
             dataset_name += "-237"
@@ -73,23 +74,28 @@ class KGReasoning(nn.Module):
         if os.path.exists(filename):
             self.relation_embeddings = torch.load(filename, map_location=device)
         else:
-            # kbc_model = load_kbc(args.kbc_path, device, args.nentity, args.nrelation)
-            # for i in tqdm(range(args.nrelation)):
-            #     relation_embedding = neural_adj_matrix(kbc_model, i, args.nentity, device, args.thrshd, adj_list[i])
-            #     relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
-            #     for (h, t) in adj_list[i]:
-            #         relation_embedding[h, t] = 1.
-            #     # add fractional
-            #     fractional_relation_embedding = []
-            #     dim = args.nentity // args.fraction
-            #     rest = args.nentity - args.fraction * dim
-            #     for i in range(args.fraction):
-            #         s = i * dim
-            #         t = (i+1) * dim
-            #         if i == args.fraction - 1:
-            #             t += rest
-            #         fractional_relation_embedding.append(relation_embedding[s:t, :].to_sparse().to(self.device))
-            #     self.relation_embeddings.append(fractional_relation_embedding)
+            # p = torch.full((args.nentity, args.nentity), 0.001)
+            # relation_embedding = torch.bernoulli(p)
+            # relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
+
+            for i in tqdm(range(args.nrelation), desc="Building neural adjacency matrix"):
+                relation_embedding = neural_adj_matrix(self.kbc_model, i, args.nentity, device, args.thrshd, adj_list[i])
+                relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
+                for (h, t) in adj_list[i]:
+                    relation_embedding[h, t] = 1.
+
+                # add fractional
+                fractional_relation_embedding = []
+                dim = args.nentity // args.fraction
+                rest = args.nentity - args.fraction * dim
+                for i in range(args.fraction):
+                    s = i * dim
+                    t = (i+1) * dim
+                    if i == args.fraction - 1:
+                        t += rest
+                    fractional_relation_embedding.append(relation_embedding[s:t, :].to_sparse().to(self.device))
+
+                self.relation_embeddings.append(fractional_relation_embedding)
             torch.save(self.relation_embeddings, filename)
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
@@ -223,3 +229,9 @@ class KGReasoning(nn.Module):
                 ans.append(ele_ans)
             ans.append(anchor)
             return ans, ele_ent
+
+    def rerank(self, scores, preferences, alpha):
+        similarities = self.kbc_model.compute_similarities(preferences)
+        similarities = torch.sum(similarities, dim=0)
+        scores = scores * alpha + similarities * (1 - alpha)
+        return scores

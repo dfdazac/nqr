@@ -73,7 +73,7 @@ def parse_args(args=None):
     parser.add_argument('--data_path', type=str, default=None, help="KG data path")
     parser.add_argument('--kbc_path', type=str, default=None, help="kbc model path")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
-    parser.add_argument('-cpu', '--cpu_num', default=10, type=int, help="used to speed up torch.dataloader")
+    parser.add_argument('-cpu', '--cpu_num', default=0, type=int, help="used to speed up torch.dataloader")
     
     parser.add_argument('--nentity', type=int, default=0, help='DO NOT MANUALLY SET')
     parser.add_argument('--nrelation', type=int, default=0, help='DO NOT MANUALLY SET')
@@ -273,6 +273,7 @@ def get_cp_thrshd(model, tp_answers, fn_answers, args, dataloader, query_name_di
     print(best_thrshds)
     return best_thrshds
 
+@torch.inference_mode()
 def evaluate(model, tp_answers, fn_answers, args, dataloader, query_name_dict, device, writer, edges_y, edges_p, cp_thrshd):
     '''
     Evaluate queries in dataloader
@@ -285,10 +286,35 @@ def evaluate(model, tp_answers, fn_answers, args, dataloader, query_name_dict, d
     rates = defaultdict(list)
     probs = defaultdict(list)
     cards = defaultdict(list)
-    for queries, queries_unflatten, query_structures in tqdm(dataloader):
+    session_count = 0
+    total_cumulative_pairwise_accuracy = 0
+    for queries, queries_unflatten, query_structures, subsets in tqdm(dataloader):
         queries = torch.LongTensor(queries).to(device)
         embedding, _, exec_query = model.embed_query(queries, query_structures[0], 0)
         embedding = embedding.squeeze()
+
+        subsets = subsets[0]
+        if len(subsets) > 0:
+            for session in subsets:
+                session_count += 1
+
+                positives, negatives = session
+                cumulative_pairwise_accuracy = 0
+                for t in range(len(positives)):
+                    # Rerank embedding scores based on feedback
+                    preferences = torch.tensor(positives[:t+1], device=device)
+                    embedding = model.rerank(embedding, preferences, alpha=0.5)
+                    # embedding = reranker.rerank(embedding, feedback)
+
+                    # Compute pairwise accuracy after reranking
+                    pos_scores = embedding[positives].unsqueeze(1)
+                    neg_scores = embedding[negatives].unsqueeze(0)
+                    num_pairs = len(positives) * len(negatives)
+                    pairwise_accuracy = (pos_scores > neg_scores).sum()
+                    cumulative_pairwise_accuracy += pairwise_accuracy / num_pairs
+
+                cumulative_pairwise_accuracy /= len(positives)
+                total_cumulative_pairwise_accuracy += cumulative_pairwise_accuracy
 
         order = torch.argsort(embedding, dim=-1, descending=True)
         ranking = torch.argsort(order)
@@ -366,6 +392,10 @@ def evaluate(model, tp_answers, fn_answers, args, dataloader, query_name_dict, d
                 rates[query_name_dict[query_structures[0]]+" HITS3 path interpretability"].append(h3_path / num_h3)
             if num_h10 > 0:
                 rates[query_name_dict[query_structures[0]]+" HITS10 path interpretability"].append(h10_path / num_h10)
+
+    average_cum_pairwise_accuracy = total_cumulative_pairwise_accuracy / session_count
+    log_metrics('Preference', {'Cumulative Pairwise Accuracy': average_cum_pairwise_accuracy}, writer)
+
     if args.path:
         rate_metric = defaultdict(float)
         for query_structure in rates:
@@ -422,6 +452,8 @@ def load_data(args, tasks):
     test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
     test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
     test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
+    valid_subsets = pickle.load(open(os.path.join(args.data_path, "valid-subsets.pkl"), "rb"))
+    test_subsets = pickle.load(open(os.path.join(args.data_path, "test-subsets.pkl"), "rb"))
     
     # remove tasks not in args.tasks
     for name in all_tasks:
@@ -433,10 +465,14 @@ def load_data(args, tasks):
             query_structure = name_query_dict[name if 'u' not in name else '-'.join([name, evaluate_union])]
             if query_structure in valid_queries:
                 del valid_queries[query_structure]
+            if query_structure in valid_subsets:
+                del valid_subsets[query_structure]
             if query_structure in test_queries:
                 del test_queries[query_structure]
+            if query_structure in test_subsets:
+                del test_subsets[query_structure]
 
-    return valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers
+    return valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_subsets, test_subsets
 
 def main(args):
     set_global_seed(args.seed)
@@ -470,12 +506,13 @@ def main(args):
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
 
-    valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers = load_data(args, tasks)
+    valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_subsets, test_subsets = load_data(args, tasks)
     
     valid_queries = flatten_query(valid_queries)
     valid_dataloader = DataLoader(
         TestDataset(
-            valid_queries, 
+            valid_queries,
+            valid_subsets,
             args.nentity, 
             args.nrelation, 
         ), 
@@ -487,7 +524,8 @@ def main(args):
     test_queries = flatten_query(test_queries)
     test_dataloader = DataLoader(
         TestDataset(
-            test_queries, 
+            test_queries,
+            test_subsets,
             args.nentity, 
             args.nrelation, 
         ), 
