@@ -18,7 +18,7 @@ class TestDataset(Dataset):
     
     def __getitem__(self, idx):
         query = self.queries[idx][0]
-        subsets = self.subsets[query]
+        subsets = self.subsets[query] if query in self.subsets else []
         query_structure = self.queries[idx][1]
         return flatten(query), query, query_structure, subsets
     
