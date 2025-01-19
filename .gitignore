@@ -171,3 +171,5 @@ datasets/*
 checkpoints/
 results/*
 ~results/.gitkeep
+
+neural_adj/

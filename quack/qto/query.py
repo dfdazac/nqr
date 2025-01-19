@@ -220,8 +220,8 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             for metric in metrics_over_t_10:
                 total_metrics_over_t_10[metric].append(metrics_over_t_10[metric])
 
-                if len(total_metrics_over_t_10[metric]) == 10:
-                    done = True
+                # if len(total_metrics_over_t_10[metric]) == 10:
+                #     done = True
 
             session_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
             for metric in session_metrics:

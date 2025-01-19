@@ -10,12 +10,14 @@ from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from quack.feedback import FeedbackGenerator
+from quack.feedback import PreferenceGenerator
+from quack.qto.query import name_query_dict, query_name_dict
 
 
 COMMAND_EMBED = "embed"
-COMMAND_CLUSTER = "cluster"
-COMMANDS = Literal[COMMAND_EMBED, COMMAND_CLUSTER]
+COMMAND_GENERATE = "generate"
+COMMAND_DESCRIBE = "describe"
+COMMANDS = Literal[COMMAND_EMBED, COMMAND_GENERATE, COMMAND_DESCRIBE]
 
 
 class Arguments(Tap):
@@ -24,7 +26,16 @@ class Arguments(Tap):
     data_path: str
     embedding_model: str = "dunzhang/stella_en_400M_v5"
 
-    num_answers_threshold: int = 10
+    tasks = "1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF"
+
+    min_answer_threshold: int = 10
+    """Minimum number of answers to consider a query"""
+    max_answer_threshold: int = 100
+    """Maximum number of answers to consider a query"""
+    max_num_sessions: int = 5
+    """Maximum number of sessions (partitions of the answer set) to generate
+    for each query"""
+
     plot: bool = False
 
     batch_size: int = 64
@@ -102,7 +113,7 @@ def embed(args: Arguments):
                 out_path)
 
 
-def cluster(args: Arguments):
+def generate(args: Arguments):
     # Load entity embeddings
     embeddings_filename = get_embeddings_filename(args.embedding_model)
     emb_data = torch.load(osp.join(args.data_path, embeddings_filename))
@@ -125,50 +136,108 @@ def cluster(args: Arguments):
     with open(osp.join(args.data_path, "id2rel.pkl"), "rb") as f:
         id2rel = pkl.load(f)
 
-    # Initialize FeedbackGenerator
-    feedback_generator = FeedbackGenerator(embeddings,entity_to_row, id2ent,
-                                           id2rel, args.num_answers_threshold,
-                                           args.plot)
-
+    # Initialize PreferenceGenerator
+    preference_generator = PreferenceGenerator(embeddings, entity_to_row, id2ent,
+                                               id2rel, args.max_num_sessions,
+                                               args.plot)
+    query_structures = [name_query_dict[query_type] for query_type in args.tasks.split(".")]
     # Cluster answers to queries
     for split in splits:
-        subsets = dict()
-        all_queries = queries[split][('e', ('r',))]
+        split_sessions = dict()
+        num_queries = 0
 
-        for query in tqdm(all_queries, desc=f"Generating {split}"):
-            target_ids = list(answers[split][query])
-            query_subsets = feedback_generator.generate(query, target_ids,
-                                                        descriptions)
-            subsets[query] = query_subsets
+        for structure in query_structures:
+            if structure not in queries[split]:
+                continue
+            all_queries = queries[split][structure]
+            structure_name = query_name_dict[structure]
+            num_queries += len(all_queries)
 
-            if args.plot and len(query_subsets) > 0:
-                for subset in query_subsets:
-                    for kind, ids in zip(("Positives", "Negatives"), subset):
-                        print(kind)
-                        for id in ids:
-                            print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
+            session_lengths = []
 
-                a = input("Press enter to continue")
+            print(f"Generating {split} split for {structure_name} queries...")
+            for query in tqdm(all_queries, mininterval=1):
+                answer_ids = list(answers[split][query])
+                num_answers = len(answer_ids)
 
-        with open(osp.join(args.data_path, f"{split}-subsets.pkl"), "wb") as f:
-            pkl.dump(subsets, f)
+                if not args.min_answer_threshold <= num_answers <= args.max_answer_threshold:
+                    continue
 
-        queries_with_subsets = sum(map(lambda s: len(s) > 0, subsets.values()))
-        print(f"Generated subsets for {queries_with_subsets:,} out of {len(all_queries):,} queries")
-        print(f"Total number of subsets: {sum(map(len, subsets.values())):,}")
-        total_examples = 0
-        for subset_list in subsets.values():
-            for subset in subset_list:
-                total_examples += len(subset[0])  # subset[0] contains the positives
-        print(f"Total number of examples: {total_examples:,}")
+                query_sessions = preference_generator.generate(query, answer_ids, descriptions)
+                split_sessions[query] = query_sessions
+                session_lengths.append(len(query_sessions))
+
+                if args.plot and len(query_sessions) > 0:
+                    for session in query_sessions:
+                        for kind, ids in zip(("Positives", "Negatives"), session):
+                            print(kind)
+                            for id in ids:
+                                print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
+
+                    a = input("Press enter to continue")
+
+        with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "wb") as f:
+            pkl.dump(split_sessions, f)
+
+    print("Done!")
+
+
+def describe(args: Arguments):
+    """Prints the number of queries and sessions for each query structure in
+    each split.
+    """
+    def print_row(label, data):
+        print(f"{label:>10}", end="")
+        for d in data:
+            if type(d) == str:
+                print(f"{d:>10}", end="")
+            else:
+                print(f"{d:>10,}", end="")
+        print()
+
+    print(f"Loading data from {args.data_path}")
+
+    splits = ["train", "valid", "test"]
+    for split in splits:
+        with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
+            structure_to_queries = pkl.load(f)
+        with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "rb") as f:
+            query_to_sessions = pkl.load(f)
+
+        print(f"Split: {split}")
+        query_count = dict()
+        session_count = dict()
+        for structure, queries in structure_to_queries.items():
+            num_queries = 0
+            num_sessions = 0
+            for query in queries:
+                if query in query_to_sessions:
+                    num_queries += 1
+                    num_sessions += len(query_to_sessions[query])
+            query_count[structure] = num_queries
+            session_count[structure] = num_sessions
+
+        structures = list(structure_to_queries.keys())
+        structure_names = [query_name_dict[s] for s in structures]
+
+        cell_divider = "-" * 10
+        print_row(cell_divider, [cell_divider for _ in structures])
+        print_row("Structure", structure_names)
+        print_row("Queries", [query_count[s] for s in structures])
+        print_row("Sessions", [session_count[s] for s in structures])
 
 
 def main():
     args = Arguments().parse_args()
     if args.command == COMMAND_EMBED:
         embed(args)
-    elif args.command == COMMAND_CLUSTER:
-        cluster(args)
+    elif args.command == COMMAND_GENERATE:
+        generate(args)
+        describe(args)
+    elif args.command == COMMAND_DESCRIBE:
+        describe(args)
+    else:
+        raise ValueError(f"Invalid command: {args.command}")
 
 
 if __name__ == "__main__":

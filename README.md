@@ -22,12 +22,12 @@ We implement this in two steps: (1) **embedding** entities based on their textua
 This command processes textual descriptions of entities and generates vector embeddings using a pre-trained sentence transformer. The computed embeddings, along with the entity-to-row mappings and descriptions, are saved in a .pt file under the `datasets/<dataset_name>/mapping/` directory. These embeddings are later used for clustering. To embed entity descriptions:
 
 ```bash
-python -m quack embed --dataset <dataset_name> --embedding_model <model_name>
+python -m quack embed <data_path> --embedding_model <model_name>
 ```
 
-#### Options:
+#### Arguments:
 
-- `--dataset`: The name of the dataset to process (default: fb15k237).
+- `data_path`: The path to the data, containing triples and entity descriptions.
 - `--embedding_model`: Sentence transformer model to use for embedding (default: `dunzhang/stella_en_400M_v5`).
 - `--batch_size`: Batch size for embedding (default: 64).
 - `--num_workers`: Number of workers for data loading (default: 0).
@@ -35,27 +35,46 @@ python -m quack embed --dataset <dataset_name> --embedding_model <model_name>
 #### Example:
 
 ```bash
-python -m quack embed --dataset fb15k237 --embedding_model all-MiniLM-L6-v2
+python -m quack embed data/fb15k-betae --embedding_model all-MiniLM-L6-v2
 ```
 
-### Generating Clusters
-To cluster answers to queries:
+### Generating Sessions
+Given the answer set of a query, we can generate a partition consisting of *positive* examples indicating a preference, and *negative* examples consisting of the rest of the entities in the answer set. We generate this partition using the embeddings from the previous step and a hierarchical clustering algorithm.
+A partition can be used to simulate *sessions*, where one item at a time from the positive set is provided to a re-ranking model to modify the answers to a query. Use the `generate` command to generate the session data for complex queries:
 
 ```bash
-python -m quack generate --dataset <dataset_name> --num_answers_threshold <threshold>
+python -m quack generate <data_path>
 ```
 
-#### Options:
+#### Arguments:
 
-- `--dataset`: The name of the dataset to process (default: fb15k237).
-- `--num_answers_threshold`: Minimum number of answers required to process a query (default: 10).
-- `--train_data`, `--valid_data`, `--test_data`: Data partitions for query generation.
+- `data_path`: The path to the data, also containing the embeddings from the previous step.
+- `--tasks`: Types of queries used to generate data, with tasks separated by a dot.
+  (default: `1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF`)
+- `--min_answer_threshold`: Minimum number of answers required to process a query (default: 10).
+- `--max_answer_threshold`: Maximum number of answers required to process a query (default: 100).
+- `--max_num_sessions`: Maximum number of sessions to generate per query (default: 5).
 
 #### Example:
 
 ```bash
-python -m quack generate --dataset fb15k237 --num_answers_threshold 15
+python -m quack generate data/fb15k-betae --min_answer_threshold 10 ---max_answer_threshold 100
 ```
+
+### Getting statistics
+
+Once the `embed` and `generate` commands have been run, we can inspect the statistics of the generated data with the `describe` command. The output is a table of query and session count for each query type in the dataset.
+
+#### Arguments
+
+- `data_path`: The path to the data, containing the generated query session data.
+
+#### Example:
+
+```bash
+python -m quack describe data/fb15k-betae
+```
+
 
 ## 2. Training QA Model
 
