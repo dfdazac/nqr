@@ -177,9 +177,9 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
 
     total_metrics_over_t_10 = defaultdict(list)
 
-    for flat_queries, queries, query_structures, subsets in tqdm(dataloader):
-        subsets = subsets[0]
-        if len(subsets) == 0:
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader):
+        sessions = sessions[0]
+        if len(sessions) == 0:
             continue
 
         flat_queries = torch.LongTensor(flat_queries).to(device)
@@ -189,7 +189,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
 
         done = False
 
-        for session in subsets:
+        for session in sessions:
             session_count += 1
             session_embedding = embedding.clone()
 
@@ -326,8 +326,8 @@ def load_data(args, tasks):
     test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
     test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
     test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
-    valid_subsets = pickle.load(open(os.path.join(args.data_path, "valid-subsets.pkl"), "rb"))
-    test_subsets = pickle.load(open(os.path.join(args.data_path, "test-subsets.pkl"), "rb"))
+    valid_sessions = pickle.load(open(os.path.join(args.data_path, "valid-sessions.pkl"), "rb"))
+    test_sessions = pickle.load(open(os.path.join(args.data_path, "test-sessions.pkl"), "rb"))
     
     # remove tasks not in args.tasks
     for name in all_tasks:
@@ -339,14 +339,14 @@ def load_data(args, tasks):
             query_structure = name_query_dict[name if 'u' not in name else '-'.join([name, evaluate_union])]
             if query_structure in valid_queries:
                 del valid_queries[query_structure]
-            if query_structure in valid_subsets:
-                del valid_subsets[query_structure]
+            if query_structure in valid_sessions:
+                del valid_sessions[query_structure]
             if query_structure in test_queries:
                 del test_queries[query_structure]
-            if query_structure in test_subsets:
-                del test_subsets[query_structure]
+            if query_structure in test_sessions:
+                del test_sessions[query_structure]
 
-    return valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_subsets, test_subsets
+    return valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_sessions, test_sessions
 
 def main(args):
     set_global_seed(args.seed)
@@ -380,13 +380,13 @@ def main(args):
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
 
-    valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_subsets, test_subsets = load_data(args, tasks)
+    valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_sessions, test_sessions = load_data(args, tasks)
     
     valid_queries = flatten_query(valid_queries)
     valid_dataloader = DataLoader(
         TestDataset(
             valid_queries,
-            valid_subsets,
+            valid_sessions,
             args.nentity, 
             args.nrelation, 
         ), 
@@ -399,7 +399,7 @@ def main(args):
     test_dataloader = DataLoader(
         TestDataset(
             test_queries,
-            test_subsets,
+            test_sessions,
             args.nentity, 
             args.nrelation, 
         ), 
