@@ -83,6 +83,9 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
+    parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
+
+
     return parser.parse_args(args)
 
 
@@ -163,11 +166,10 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
         }
 
 @torch.inference_mode()
-def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, writer, edges_y, edges_p, cp_thrshd):
+def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, writer, mode):
     '''
     Evaluate queries in dataloader
     '''
-    mode = "Test"
     average_metrics = defaultdict(float)
     all_metrics = defaultdict(float)
     logs = defaultdict(list)
@@ -209,7 +211,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
                 pairwise_accuracy = (pos_scores > neg_scores).sum().item()
                 cumulative_pairwise_accuracy += pairwise_accuracy / num_pairs
 
-                if len(positives) == 10:
+                if len(positives) >= 10 and t < 10:
                     instant_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
                     for metric in instant_metrics:
                         if metric.startswith('num'):
@@ -219,9 +221,6 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
 
             for metric in metrics_over_t_10:
                 total_metrics_over_t_10[metric].append(metrics_over_t_10[metric])
-
-                # if len(total_metrics_over_t_10[metric]) == 10:
-                #     done = True
 
             session_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
             for metric in session_metrics:
@@ -411,8 +410,12 @@ def main(args):
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict)
 
     cp_thrshd = None
-    
-    evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, writer, edges_y, edges_p, cp_thrshd)
+
+    if args.do_valid:
+        evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, writer, "Valid")
+
+    if args.do_test:
+        evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, writer, "Test")
 
 if __name__ == '__main__':
     main(parse_args())
