@@ -153,15 +153,15 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
         mrr_easy, h1_easy, h3_easy, h10_easy = 1, 1, 1, 1
 
     return {
-            'MRR_hard': mrr_hard,
-            'HITS1_hard': h1_hard,
-            'HITS3_hard': h3_hard,
-            'HITS10_hard': h10_hard,
+            'mrr_hard': mrr_hard,
+            'hits@1_hard': h1_hard,
+            'hits@3_hard': h3_hard,
+            'hits@10_hard': h10_hard,
             'num_hard_answer': num_hard,
-            'MRR_easy': mrr_easy,
-            'HITS1_easy': h1_easy,
-            'HITS3_easy': h3_easy,
-            'HITS10_easy': h10_easy,
+            'mrr_easy': mrr_easy,
+            'hits@1_easy': h1_easy,
+            'hits@3_easy': h3_easy,
+            'hits@10_easy': h10_easy,
             'num_easy_answer': num_easy,
         }
 
@@ -174,8 +174,6 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     all_metrics = defaultdict(float)
     logs = defaultdict(list)
     session_count = 0
-    total_cumulative_pairwise_accuracy = 0
-    total_metrics_delta = defaultdict(float)
 
     total_metrics_over_t_10 = defaultdict(list)
 
@@ -189,59 +187,52 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
         embedding = embedding.squeeze()
         initial_metrics = compute_metrics(embedding, hard_answers, easy_answers, queries)
 
-        done = False
-
+        query_cumulative_metrics = defaultdict(float)
         for session in sessions:
             session_count += 1
             session_embedding = embedding.clone()
 
             positives, negatives = session
-            cumulative_pairwise_accuracy = 0
-            metrics_over_t_10 = defaultdict(list)
+            cumulative_metrics = defaultdict(float)
+            metrics_over_10_steps = defaultdict(list)
             for t in range(len(positives)):
-                # Rerank embedding scores based on feedback
+                # Rerank embedding scores based on preferences
                 preferences = torch.tensor(positives[:t+1], device=device)
                 session_embedding = model.rerank(session_embedding, preferences, alpha=0.5)
-                # embedding = reranker.rerank(embedding, feedback)
 
                 # Compute pairwise accuracy after reranking
                 pos_scores = session_embedding[positives].unsqueeze(1)
                 neg_scores = session_embedding[negatives].unsqueeze(0)
                 num_pairs = len(positives) * len(negatives)
-                pairwise_accuracy = (pos_scores > neg_scores).sum().item()
-                cumulative_pairwise_accuracy += pairwise_accuracy / num_pairs
+                pairwise_accuracy = (pos_scores > neg_scores).sum().item() / num_pairs
+                cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
+                
+                instant_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
 
-                if len(positives) >= 10 and t < 10:
-                    instant_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
-                    for metric in instant_metrics:
-                        if metric.startswith('num'):
-                            continue
-                        metrics_over_t_10[metric].append(instant_metrics[metric] - initial_metrics[metric])
-                    metrics_over_t_10['pairwise_accuracy'].append(pairwise_accuracy / num_pairs)
+                for metric in instant_metrics:
+                    if metric.startswith('num'):
+                        continue
+                    metric_delta = instant_metrics[metric] - initial_metrics[metric]
+                    cumulative_metrics[f"{metric}_delta"] += metric_delta
+                    if t < 10 <= len(positives):
+                        metrics_over_10_steps[metric].append(metric_delta)
 
-            for metric in metrics_over_t_10:
-                total_metrics_over_t_10[metric].append(metrics_over_t_10[metric])
+                if t < 10 <= len(positives):
+                    metrics_over_10_steps['pairwise_accuracy'].append(pairwise_accuracy)
 
-            session_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
-            for metric in session_metrics:
-                if metric.startswith('num'):
-                    continue
-                total_metrics_delta[metric] += session_metrics[metric] - initial_metrics[metric]
+            for metric in cumulative_metrics:
+                query_cumulative_metrics[metric] += cumulative_metrics[metric] / len(positives)
 
-            cumulative_pairwise_accuracy /= len(positives)
-            total_cumulative_pairwise_accuracy += cumulative_pairwise_accuracy
+            for metric in metrics_over_10_steps:
+                total_metrics_over_t_10[metric].append(metrics_over_10_steps[metric])
 
+        for metric, value in query_cumulative_metrics.items():
+            initial_metrics[f"cumulative_{metric}"] = value / len(sessions)
         logs[query_structures[0]].append(initial_metrics)
-
-        if done:
-            break
-
-    average_cum_pairwise_accuracy = total_cumulative_pairwise_accuracy / max(1, session_count)
-    log_metrics('Preference', {'Cumulative Pairwise Accuracy': average_cum_pairwise_accuracy}, writer)
 
     # Plot metrics over time for queries with 10 answers
     # Extract data for MRR_hard and pairwise_accuracy
-    mrr_hard = total_metrics_over_t_10['MRR_hard']  # List of lists
+    mrr_hard = total_metrics_over_t_10['mrr_hard']  # List of lists
     pairwise_acc = total_metrics_over_t_10['pairwise_accuracy']  # List of lists
 
     # Convert lists of lists into numpy arrays for easier manipulation
@@ -281,11 +272,6 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     fig.suptitle('Distribution of Metrics Over Time')
     plt.tight_layout()
     plt.show()
-
-    average_metrics_delta = dict()
-    for metric in total_metrics_delta:
-        average_metrics_delta[metric] = total_metrics_delta[metric] / session_count
-    log_metrics('Average ranking delta', average_metrics_delta, writer)
 
     metrics = collections.defaultdict(lambda: collections.defaultdict(int))
     for query_structure in logs:
