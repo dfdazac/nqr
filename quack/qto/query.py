@@ -2,6 +2,7 @@ import argparse
 import collections
 import logging
 import os
+import os.path as osp
 import pickle
 from collections import defaultdict
 
@@ -83,20 +84,22 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
+    parser.add_argument('--reranker', default='cosine', type=str, choices=['cosine'], help='reranker method')
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
 
 
     return parser.parse_args(args)
 
 
-def log_metrics(mode, metrics, writer):
+def log_metrics(mode, metrics, output_path):
     '''
     Print the evaluation logs
     '''
-    for metric in metrics:
-        logging.info('%s %s: %f' % (mode, metric, metrics[metric]))
-        print('%s %s: %f' % (mode, metric, metrics[metric]))
-        writer.write('%s %s: %f\n' % (mode, metric, metrics[metric]))
+    with open(osp.join(output_path), 'w') as f:
+        for metric in metrics:
+            logging.info('%s %s: %f' % (mode, metric, metrics[metric]))
+            print('%s %s: %f' % (mode, metric, metrics[metric]))
+            f.write('%s %s: %f\n' % (mode, metric, metrics[metric]))
 
 
 def read_triples(filenames, nrelation, datapath):
@@ -166,7 +169,7 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
         }
 
 @torch.inference_mode()
-def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, writer, mode):
+def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode):
     '''
     Evaluate queries in dataloader
     '''
@@ -175,7 +178,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     logs = defaultdict(list)
     session_count = 0
 
-    total_metrics_over_t_10 = defaultdict(list)
+    total_metrics_over_10_steps = defaultdict(list)
 
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader):
         sessions = sessions[0]
@@ -224,54 +227,11 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
                 query_cumulative_metrics[metric] += cumulative_metrics[metric] / len(positives)
 
             for metric in metrics_over_10_steps:
-                total_metrics_over_t_10[metric].append(metrics_over_10_steps[metric])
+                total_metrics_over_10_steps[metric].append(metrics_over_10_steps[metric])
 
         for metric, value in query_cumulative_metrics.items():
             initial_metrics[f"cumulative_{metric}"] = value / len(sessions)
         logs[query_structures[0]].append(initial_metrics)
-
-    # Plot metrics over time for queries with 10 answers
-    # Extract data for MRR_hard and pairwise_accuracy
-    mrr_hard = total_metrics_over_t_10['mrr_hard']  # List of lists
-    pairwise_acc = total_metrics_over_t_10['pairwise_accuracy']  # List of lists
-
-    # Convert lists of lists into numpy arrays for easier manipulation
-    mrr_hard = np.array(mrr_hard)  # Shape: (num_queries, num_timesteps)
-    pairwise_acc = np.array(pairwise_acc)  # Shape: (num_queries, num_timesteps)
-
-    # Define time steps
-    num_timesteps = mrr_hard.shape[1]
-    time_steps = np.arange(1, num_timesteps + 1)
-    # Create subplots for boxplots
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-
-    # Metrics and titles for looping
-    metrics = [pairwise_acc, mrr_hard]
-    titles = ['Pairwise Accuracy', '$\Delta$MRR']
-
-    # Loop over the metrics and plot boxplots
-    for ax, metric, title in zip(axes, metrics, titles):
-        ax.boxplot(metric, positions=time_steps, widths=0.6, medianprops={'color': 'black'})
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.set_title(title)
-        ax.set_xlabel('Number of interactions')
-        ax.set_ylabel('Value')
-        if title == 'Pairwise Accuracy':
-            ax.set_ylim(-0.1, 1.1)
-        else:
-            ax.set_ylim(-1.1, 1.1)
-
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_visible(False)
-        ax.spines['bottom'].set_visible(False)
-
-        ax.axhline(0, color='black', linewidth=1)  # Horizontal line at y=0
-        ax.axvline(0, color='black', linewidth=1)  # Vertical line at x=0
-
-    fig.suptitle('Distribution of Metrics Over Time')
-    plt.tight_layout()
-    plt.show()
 
     metrics = collections.defaultdict(lambda: collections.defaultdict(int))
     for query_structure in logs:
@@ -284,7 +244,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     num_query_structures = 0
     num_queries = 0
     for query_structure in metrics:
-        log_metrics(mode+" "+query_name_dict[query_structure], metrics[query_structure], writer)
+        log_metrics(mode+" "+query_name_dict[query_structure], metrics[query_structure], osp.join(output_path, 'all_metrics.txt'))
         for metric in metrics[query_structure]:
             all_metrics["_".join([query_name_dict[query_structure], metric])] = metrics[query_structure][metric]
             if metric != 'num_queries':
@@ -295,9 +255,11 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     for metric in average_metrics:
         average_metrics[metric] /= num_query_structures
         all_metrics["_".join(["average", metric])] = average_metrics[metric]
-    log_metrics('%s average'%mode, average_metrics, writer)
+    log_metrics('%s average'%mode, average_metrics, osp.join(output_path, 'average_metrics.txt'))
 
-    writer.write('\n')
+    with open(osp.join(output_path, 'metrics_over_time.pkl'), 'wb') as f:
+        pickle.dump(total_metrics_over_10_steps, f)
+
     return all_metrics
 
 def load_data(args, tasks):
@@ -342,10 +304,14 @@ def main(args):
     dataset_name = args.data_path.split('/')[1].split('-')[0]
     if args.data_path.split('/')[1].split('-')[1] == "237":
         dataset_name += "-237"
-    filename = os.path.join('results', dataset_name+'_'+str(args.fraction)+'_'+str(args.thrshd)+'.txt')
-    if not os.path.exists('results'):
-        os.makedirs('results')
-    writer = open(filename, 'a+')
+
+    folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}"
+    if args.reranker == "cosine":
+        folder_name += f"_cosine_{args.alpha}"
+
+    output_path = os.path.join('results', folder_name)
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
     with open('%s/stats.txt'%args.data_path) as f:
         entrel = f.readlines()
@@ -398,10 +364,10 @@ def main(args):
     cp_thrshd = None
 
     if args.do_valid:
-        evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, writer, "Valid")
+        evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "Valid")
 
     if args.do_test:
-        evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, writer, "Test")
+        evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "Test")
 
 if __name__ == '__main__':
     main(parse_args())
