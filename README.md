@@ -103,7 +103,7 @@ python -m quack.qto.complex train --data_path data/nell-betae --score_rel True -
 ### 2.3 Evaluating QTO with the trained ComplEx model
 
 ```bash
-python -m quack.qto.query
+python -m quack.qto.query --data_path data/fb15k-betae --kbc_path checkpoints/fb15k-betae_ComplEx_Rank1000_RegN3_Lmbda0.01_W0.1/model.pt --fraction 10 --thrshd 0.001 --neg_scale 6 --tasks 1p --do_valid
 ```
 
 

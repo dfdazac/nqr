@@ -260,44 +260,30 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
 
     return all_metrics
 
-def load_data(args, tasks):
-    '''
-    Load queries and remove queries not in tasks
-    '''
-    logging.info("loading data")
-    valid_queries = pickle.load(open(os.path.join(args.data_path, "valid-queries.pkl"), 'rb'))
-    valid_hard_answers = pickle.load(open(os.path.join(args.data_path, "valid-hard-answers.pkl"), 'rb'))
-    valid_easy_answers = pickle.load(open(os.path.join(args.data_path, "valid-easy-answers.pkl"), 'rb'))
-    test_queries = pickle.load(open(os.path.join(args.data_path, "test-queries.pkl"), 'rb'))
-    test_hard_answers = pickle.load(open(os.path.join(args.data_path, "test-hard-answers.pkl"), 'rb'))
-    test_easy_answers = pickle.load(open(os.path.join(args.data_path, "test-easy-answers.pkl"), 'rb'))
-    valid_sessions = pickle.load(open(os.path.join(args.data_path, "valid-sessions.pkl"), "rb"))
-    test_sessions = pickle.load(open(os.path.join(args.data_path, "test-sessions.pkl"), "rb"))
-    
-    # remove tasks not in args.tasks
-    for name in all_tasks:
-        if 'u' in name:
-            name, evaluate_union = name.split('-')
-        else:
-            evaluate_union = args.evaluate_union
-        if name not in tasks or evaluate_union != args.evaluate_union:
-            query_structure = name_query_dict[name if 'u' not in name else '-'.join([name, evaluate_union])]
-            if query_structure in valid_queries:
-                del valid_queries[query_structure]
-            if query_structure in valid_sessions:
-                del valid_sessions[query_structure]
-            if query_structure in test_queries:
-                del test_queries[query_structure]
-            if query_structure in test_sessions:
-                del test_sessions[query_structure]
 
-    return valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_sessions, test_sessions
+def load_data(args, tasks, split):
+    """Load queries and remove queries not in tasks for the given split ("valid" or "test")."""
+    logging.info(f"Loading {split} data")
+
+    queries = pickle.load(open(os.path.join(args.data_path, f"{split}-queries.pkl"), 'rb'))
+    hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
+    easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
+    sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
+
+    query_structures = list(queries.keys())
+    for structure in query_structures:
+        if query_name_dict[structure] not in tasks:
+            queries.pop(structure)
+        else:
+            queries[structure] = {q for q in queries[structure] if q in sessions}
+
+    return queries, hard_answers, easy_answers, sessions
 
 def main(args):
     set_global_seed(args.seed)
     tasks = args.tasks.split('.')
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(device)
+    print(f"Using device: {device}")
 
     dataset_name = args.data_path.split('/')[1].split('-')[0]
     if args.data_path.split('/')[1].split('-')[1] == "237":
@@ -323,13 +309,14 @@ def main(args):
         ent2id = pickle.load(f)
     with open('%s/id2rel.pkl'%args.data_path, 'rb') as f:
         id2rel = pickle.load(f)
-    
+
     args.nentity = nentity
     args.nrelation = nrelation
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
 
-    valid_queries, valid_hard_answers, valid_easy_answers, test_queries, test_hard_answers, test_easy_answers, valid_sessions, test_sessions = load_data(args, tasks)
+    valid_queries, valid_hard_answers, valid_easy_answers, valid_sessions = load_data(args, tasks, "valid")
+    test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
     
     valid_queries = flatten_query(valid_queries)
     valid_dataloader = DataLoader(
