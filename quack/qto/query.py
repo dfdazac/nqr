@@ -6,8 +6,6 @@ import os.path as osp
 import pickle
 from collections import defaultdict
 
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -95,7 +93,7 @@ def log_metrics(mode, metrics, output_path):
     '''
     Print the evaluation logs
     '''
-    with open(osp.join(output_path), 'w') as f:
+    with open(osp.join(output_path), 'a+') as f:
         for metric in metrics:
             logging.info('%s %s: %f' % (mode, metric, metrics[metric]))
             print('%s %s: %f' % (mode, metric, metrics[metric]))
