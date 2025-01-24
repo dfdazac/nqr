@@ -84,6 +84,7 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
+    parser.add_argument("--preference", default="positive", choices=["positive", "negative"], help="preference type")
     parser.add_argument('--reranker',
                         default='cosine',
                         type=str,
@@ -197,7 +198,11 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             session_scores = scores.clone()
 
             positives, negatives = session
-            session_feedback = positives[:10]
+
+            if args.preference == "positive":
+                session_feedback = positives[:10]
+            else:
+                session_feedback = negatives[:10]
 
             cumulative_metrics = defaultdict(float)
             metrics_over_10_steps = defaultdict(list)
@@ -314,6 +319,11 @@ def main(args):
     folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}"
     if args.reranker == "cosine":
         folder_name += f"_cosine_{args.alpha}"
+    if args.do_valid:
+        folder_name += "_valid"
+    if args.do_test:
+        folder_name += "_test"
+    folder_name += "_positive" if args.preference == "positive" else "_negative"
 
     output_path = os.path.join('results', folder_name)
     if not os.path.exists(output_path):
