@@ -9,6 +9,8 @@ from collections import defaultdict
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import scipy.stats as stats
+import numpy as np
 
 from quack.qto.dataset import TestDataset
 from quack.qto.model import KGReasoning
@@ -173,7 +175,8 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     '''
     average_metrics = defaultdict(float)
     all_metrics = defaultdict(float)
-    logs = defaultdict(list)
+    results = defaultdict(list)
+    reranked_delta = defaultdict(lambda: defaultdict(list))
     session_count = 0
 
     total_metrics_over_10_steps = defaultdict(list)
@@ -194,11 +197,13 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             session_scores = scores.clone()
 
             positives, negatives = session
+            session_feedback = positives[:10]
+
             cumulative_metrics = defaultdict(float)
             metrics_over_10_steps = defaultdict(list)
-            for t in range(min(10, len(positives))):
+            for t in range(len(session_feedback)):
                 # Rerank embedding scores based on preferences
-                preferences = torch.tensor(positives[:t+1], device=device)
+                preferences = torch.tensor(session_feedback[:t+1], device=device)
                 session_scores = model.rerank(session_scores, preferences, alpha=args.alpha)
 
                 # Compute pairwise accuracy after reranking
@@ -213,32 +218,36 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
                 for metric in instant_metrics:
                     if metric.startswith('num'):
                         continue
-                    initial_metric = 1.0 if initial_metrics[metric] == 0 else initial_metrics[metric]
-                    metric_delta = (instant_metrics[metric] - initial_metric) / initial_metric
-                    cumulative_metrics[f"{metric}_delta"] += metric_delta
+                    absolute_delta = instant_metrics[metric] - initial_metrics[metric]
+                    relative_delta = absolute_delta / (1.0 if initial_metrics[metric] == 0 else initial_metrics[metric])
+                    cumulative_metrics[f"{metric}_delta"] += relative_delta
                     if t < 10 <= len(positives):
-                        metrics_over_10_steps[metric].append(metric_delta)
+                        metrics_over_10_steps[metric].append(relative_delta)
+
+                    if t == len(session_feedback) - 1:
+                        reranked_delta[query_structures[0]][metric].append(absolute_delta)
 
                 if t < 10 <= len(positives):
                     metrics_over_10_steps['pairwise_accuracy'].append(pairwise_accuracy)
 
             for metric in cumulative_metrics:
-                query_cumulative_metrics[metric] += cumulative_metrics[metric] / len(positives)
+                query_cumulative_metrics[metric] += cumulative_metrics[metric] / len(session_feedback)
 
             for metric in metrics_over_10_steps:
                 total_metrics_over_10_steps[metric].append(metrics_over_10_steps[metric])
 
         for metric, value in query_cumulative_metrics.items():
             initial_metrics[f"cumulative_{metric}"] = value / len(sessions)
-        logs[query_structures[0]].append(initial_metrics)
+
+        results[query_structures[0]].append(initial_metrics)
 
     metrics = collections.defaultdict(lambda: collections.defaultdict(int))
-    for query_structure in logs:
-        for metric in logs[query_structure][0].keys():
+    for query_structure in results:
+        for metric in results[query_structure][0].keys():
             if metric in ['num_hard_answer', 'num_easy_answer']:
                 continue
-            metrics[query_structure][metric] = sum([log[metric] for log in logs[query_structure]])/len(logs[query_structure])
-        metrics[query_structure]['num_queries'] = len(logs[query_structure])
+            metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]])/len(results[query_structure])
+        metrics[query_structure]['num_queries'] = len(results[query_structure])
     
     num_query_structures = 0
     num_queries = 0
@@ -253,6 +262,14 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
                     average_metrics[metric] += metrics[query_structure][metric]
             num_queries += metrics[query_structure]['num_queries']
             num_query_structures += 1
+
+    with open(osp.join(output_path, "p_values.txt"), "w") as f:
+        for query_structure in reranked_delta:
+            p_values_dict = dict()
+            for metric, deltas in reranked_delta[query_structure].items():
+                _, p_value = stats.wilcoxon(deltas, alternative="two-sided")
+                p_values_dict[metric] = p_value
+            log_metrics(f"{mode} delta p_value {query_name_dict[query_structure]}", p_values_dict, file_pointer=f)
 
     with open(osp.join(output_path, 'average_metrics.txt'), "w") as f:
         for metric in average_metrics:
