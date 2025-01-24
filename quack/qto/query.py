@@ -183,9 +183,6 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
         if len(sessions) == 0:
             raise ValueError("No sessions found for query")
 
-        if len(logs[query_structures[0]]) == 100:
-            continue
-
         flat_queries = torch.LongTensor(flat_queries).to(device)
         scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
         scores = scores.squeeze()
@@ -199,7 +196,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             positives, negatives = session
             cumulative_metrics = defaultdict(float)
             metrics_over_10_steps = defaultdict(list)
-            for t in range(len(positives)):
+            for t in range(min(10, len(positives))):
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(positives[:t+1], device=device)
                 session_scores = model.rerank(session_scores, preferences, alpha=0.5)
