@@ -199,7 +199,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             for t in range(min(10, len(positives))):
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(positives[:t+1], device=device)
-                session_scores = model.rerank(session_scores, preferences, alpha=0.5)
+                session_scores = model.rerank(session_scores, preferences, alpha=args.alpha)
 
                 # Compute pairwise accuracy after reranking
                 pos_scores = session_scores[positives].unsqueeze(1)
