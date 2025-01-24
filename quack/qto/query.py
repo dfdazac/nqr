@@ -10,9 +10,9 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from .dataset import TestDataset
-from .model import KGReasoning
-from .util import flatten_query, set_global_seed
+from quack.qto.dataset import TestDataset
+from quack.qto.model import KGReasoning
+from quack.qto.util import flatten_query, set_global_seed
 
 
 query_name_dict = {('e', ('r',)): '1p', 
@@ -82,22 +82,22 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
-    parser.add_argument('--reranker', default='cosine', type=str, choices=['cosine'], help='reranker method')
+    parser.add_argument('--reranker',
+                        default='cosine',
+                        type=str,
+                        choices=['greedy', 'cosine'],
+                        help='reranker method')
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
 
 
     return parser.parse_args(args)
 
 
-def log_metrics(mode, metrics, output_path):
-    '''
-    Print the evaluation logs
-    '''
-    with open(osp.join(output_path), 'a+') as f:
-        for metric in metrics:
-            logging.info('%s %s: %f' % (mode, metric, metrics[metric]))
-            print('%s %s: %f' % (mode, metric, metrics[metric]))
-            f.write('%s %s: %f\n' % (mode, metric, metrics[metric]))
+def log_metrics(mode, metrics, file_pointer):
+    for metric in metrics:
+        logging.info('%s %s: %f' % (mode, metric, metrics[metric]))
+        print('%s %s: %f' % (mode, metric, metrics[metric]))
+        file_pointer.write('%s %s: %f\n' % (mode, metric, metrics[metric]))
 
 
 def read_triples(filenames, nrelation, datapath):
@@ -181,17 +181,20 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader):
         sessions = sessions[0]
         if len(sessions) == 0:
+            raise ValueError("No sessions found for query")
+
+        if len(logs[query_structures[0]]) == 100:
             continue
 
         flat_queries = torch.LongTensor(flat_queries).to(device)
-        embedding, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
-        embedding = embedding.squeeze()
-        initial_metrics = compute_metrics(embedding, hard_answers, easy_answers, queries)
+        scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
+        scores = scores.squeeze()
+        initial_metrics = compute_metrics(scores, hard_answers, easy_answers, queries)
 
         query_cumulative_metrics = defaultdict(float)
         for session in sessions:
             session_count += 1
-            session_embedding = embedding.clone()
+            session_scores = scores.clone()
 
             positives, negatives = session
             cumulative_metrics = defaultdict(float)
@@ -199,21 +202,22 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             for t in range(len(positives)):
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(positives[:t+1], device=device)
-                session_embedding = model.rerank(session_embedding, preferences, alpha=0.5)
+                session_scores = model.rerank(session_scores, preferences, alpha=0.5)
 
                 # Compute pairwise accuracy after reranking
-                pos_scores = session_embedding[positives].unsqueeze(1)
-                neg_scores = session_embedding[negatives].unsqueeze(0)
+                pos_scores = session_scores[positives].unsqueeze(1)
+                neg_scores = session_scores[negatives].unsqueeze(0)
                 num_pairs = len(positives) * len(negatives)
                 pairwise_accuracy = (pos_scores > neg_scores).sum().item() / num_pairs
                 cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
                 
-                instant_metrics = compute_metrics(session_embedding, hard_answers, easy_answers, queries)
+                instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
 
                 for metric in instant_metrics:
                     if metric.startswith('num'):
                         continue
-                    metric_delta = instant_metrics[metric] - initial_metrics[metric]
+                    initial_metric = 1.0 if initial_metrics[metric] == 0 else initial_metrics[metric]
+                    metric_delta = (instant_metrics[metric] - initial_metric) / initial_metric
                     cumulative_metrics[f"{metric}_delta"] += metric_delta
                     if t < 10 <= len(positives):
                         metrics_over_10_steps[metric].append(metric_delta)
@@ -241,19 +245,23 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     
     num_query_structures = 0
     num_queries = 0
-    for query_structure in metrics:
-        log_metrics(mode+" "+query_name_dict[query_structure], metrics[query_structure], osp.join(output_path, 'all_metrics.txt'))
-        for metric in metrics[query_structure]:
-            all_metrics["_".join([query_name_dict[query_structure], metric])] = metrics[query_structure][metric]
-            if metric != 'num_queries':
-                average_metrics[metric] += metrics[query_structure][metric]
-        num_queries += metrics[query_structure]['num_queries']
-        num_query_structures += 1
+    with open(osp.join(output_path, 'all_metrics.txt'), "w") as f:
+        for query_structure in metrics:
+            log_metrics(mode + " " + query_name_dict[query_structure],
+                        metrics[query_structure],
+                        file_pointer=f)
+            for metric in metrics[query_structure]:
+                all_metrics["_".join([query_name_dict[query_structure], metric])] = metrics[query_structure][metric]
+                if metric != 'num_queries':
+                    average_metrics[metric] += metrics[query_structure][metric]
+            num_queries += metrics[query_structure]['num_queries']
+            num_query_structures += 1
 
-    for metric in average_metrics:
-        average_metrics[metric] /= num_query_structures
-        all_metrics["_".join(["average", metric])] = average_metrics[metric]
-    log_metrics('%s average'%mode, average_metrics, osp.join(output_path, 'average_metrics.txt'))
+    with open(osp.join(output_path, 'average_metrics.txt'), "w") as f:
+        for metric in average_metrics:
+            average_metrics[metric] /= num_query_structures
+            all_metrics["_".join(["average", metric])] = average_metrics[metric]
+        log_metrics('%s average'%mode, average_metrics, file_pointer=f)
 
     with open(osp.join(output_path, 'metrics_over_time.pkl'), 'wb') as f:
         pickle.dump(total_metrics_over_10_steps, f)
