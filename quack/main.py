@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from quack.feedback import PreferenceGenerator
 from quack.qto.query import name_query_dict, query_name_dict
+from quack.qto.util import flatten
 
 
 COMMAND_EMBED = "embed"
@@ -147,6 +148,7 @@ def generate(args: Arguments):
         num_queries = 0
 
         for structure in query_structures:
+            flat_structure = flatten(structure)
             if structure not in queries[split]:
                 continue
             all_queries = queries[split][structure]
@@ -156,14 +158,25 @@ def generate(args: Arguments):
             session_lengths = []
 
             print(f"Generating {split} split for {structure_name} queries...")
-            for query in tqdm(all_queries, mininterval=1):
+            for query in tqdm(all_queries, mininterval=1, disable=args.plot):
                 answer_ids = list(answers[split][query])
                 num_answers = len(answer_ids)
 
                 if not args.min_answer_threshold <= num_answers <= args.max_answer_threshold:
                     continue
 
-                query_sessions = preference_generator.generate(query, answer_ids, descriptions)
+                if args.plot:
+                    print(f"Query type: {structure_name}")
+                    print(f"Query structure: {structure}")
+                    flat_query = flatten(query)
+                    print("Flat query:", " ".join([f"{t}_{k}" for k, t in enumerate(flat_structure)]))
+                    for i, (kind, identifier) in enumerate(zip(flat_structure, flat_query)):
+                        if kind == "e":
+                            print(f"{i}: [{id2ent[identifier]}] {descriptions[entity_to_row[id2ent[identifier]]][:150]}")
+                        elif kind == "r":
+                            print(f"{i} Predicate: {id2rel[identifier]}")
+
+                query_sessions = preference_generator.generate(answer_ids, descriptions)
                 split_sessions[query] = query_sessions
                 session_lengths.append(len(query_sessions))
 

@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 
+from quack.qto.util import flatten
 
 class PreferenceGenerator:
     def __init__(self,
@@ -18,13 +19,7 @@ class PreferenceGenerator:
         self.max_num_partitions = max_num_partitions
         self.plot = plot
 
-    def generate(self, query, target_ids, descriptions):
-        subject, predicate = query[0], query[1][0]
-        if self.plot:
-            print(query)
-            print(f"Subject: [{self.id2ent[subject]}] {descriptions[self.entity_to_row[self.id2ent[subject]]][:150]}")
-            print(f"Predicate: {self.id2rel[predicate]}")
-
+    def generate(self, target_ids, descriptions):
         # Embed targets
         entities = [self.id2ent[t] for t in target_ids]
         entity_rows = [self.entity_to_row[e] for e in entities]
