@@ -1,4 +1,6 @@
 import logging
+from itertools import pairwise
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -97,6 +99,18 @@ class KGReasoning(nn.Module):
 
                 self.relation_embeddings.append(fractional_relation_embedding)
             torch.save(self.relation_embeddings, filename)
+
+        embedding_dim = self.kbc_model.rank * 2
+        self.self_attention_1 = nn.MultiheadAttention(embed_dim=embedding_dim + 1, num_heads=1, batch_first=True)
+        self.layer_norm_1 = nn.LayerNorm(embedding_dim + 1)
+        self.fc1 = nn.Linear(embedding_dim + 1, embedding_dim)
+        self.self_attention_2 = nn.MultiheadAttention(embed_dim=embedding_dim, num_heads=4, batch_first=True)
+        self.layer_norm_2 = nn.LayerNorm(embedding_dim)
+
+        # Linear layers for transformation
+        self.fc2 = nn.Linear(embedding_dim * 2 + 1, embedding_dim)
+        self.fc3 = nn.Linear(embedding_dim, 1)
+
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -235,3 +249,123 @@ class KGReasoning(nn.Module):
         similarities = torch.sum(similarities, dim=0)
         scores = scores * alpha + similarities * (1 - alpha)
         return scores
+
+    def reranking_loss(self, preferences, labels, scores, positives, negatives):
+        """
+        Computes the margin-based loss for reranking.
+
+        Args:
+            preferences (Tensor): Padded tensor of preference set inputs. (batch_size, num_preferences)
+            labels (Tensor): Corresponding labels for the preferences. (batch_size, num_preferences)
+            scores (Tensor): Initial scores from the base QA model, shape (batch_size, num_entities).
+            positives (Tensor): Padded tensor of positively preferred entities.
+            negatives (Tensor): Padded tensor of negatively preferred entities.
+            margin (float): Margin for ranking loss.
+
+        Returns:
+            Tensor: Computed loss.
+        """
+        batch_size = preferences.shape[0]
+        device = preferences.device
+
+        # Retrieve embeddings of entities specified as preferences
+        preferences_mask = preferences < 0
+        preferences[preferences_mask] = 0
+
+        # == Part 1: Compute preference embeddings m ==
+        m = self.kbc_model.embeddings[0](preferences)
+        # (batch_size, num_preferences, embedding_dim)
+
+        m = torch.cat([m, labels.unsqueeze(-1)], dim=-1)
+        # (batch_size, num_preferences, embedding_dim + 1)
+
+        m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
+        m = self.layer_norm_1(m)
+        m = F.relu(self.fc1(m))
+        m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
+        m = self.layer_norm_2(m)
+        # (batch_size, num_preferences, embedding_dim)
+
+        m = torch.mean(m, dim=1)
+        # (batch_size, embedding_dim)
+
+        # == Part 2: Compute score adjustments for positive and negatives ==
+        positives, pos_batch_id = positives
+        negatives, neg_batch_id = negatives
+
+        pos_embeddings = self.kbc_model.embeddings[0](positives)
+        # (p * batch_size, embedding_dim)
+        pos_scores = scores[pos_batch_id, positives]
+        # (p * batch_size)
+        pos_inputs = torch.cat([m[pos_batch_id], pos_embeddings, pos_scores.unsqueeze(-1)], dim=1)
+        # (p * batch_size, 2 * embedding_dim)
+        pos_score_deltas = self.fc3(F.relu(self.fc2(pos_inputs))).squeeze(-1)
+        # (p * batch_size, 1)
+        pos_new_scores = pos_scores + pos_score_deltas
+        # (p * batch_size)
+
+        neg_embeddings = self.kbc_model.embeddings[0](negatives)
+        # (n * batch_size, embedding_dim)
+        neg_scores = scores[neg_batch_id, negatives]
+        # (n * batch_size)
+        neg_inputs = torch.cat([m[neg_batch_id], neg_embeddings, neg_scores.unsqueeze(-1)], dim=1)
+        # (n * batch_size, 2 * embedding_dim)
+        neg_score_deltas = self.fc3(F.relu(self.fc2(neg_inputs))).squeeze(-1)
+        # (n * batch_size, 1)
+        neg_new_scores = neg_scores + neg_score_deltas
+        # (n * batch_size)
+
+        pairwise_diff = pos_new_scores.unsqueeze(1) - neg_new_scores.unsqueeze(0)
+        # (p * batch_size, n * batch_size)
+        batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
+        # (p * batch_size, n * batch_size)
+
+        # Margin loss
+        # preference_loss = torch.relu(1.0 - pairwise_diff) * batch_mask
+        # preference_loss = preference_loss.sum() / batch_mask.sum()
+
+        # RankNet loss: BCE applied to sigmoid of pairwise differences
+        preference_loss = -F.logsigmoid(pairwise_diff)
+        preference_loss = (preference_loss * batch_mask).sum() / batch_mask.sum()
+
+        # == Part 3: Compute score adjustments for random examples ==
+        num_random_examples = 10
+        random_batch_id = torch.repeat_interleave(torch.arange(batch_size, device=device), num_random_examples)
+        sampling_probabilities = torch.ones(batch_size, self.nentity, device=device)
+        # Make sure that the sampled entities are not in the answer set
+        sampling_probabilities[pos_batch_id, positives] = 0
+        sampling_probabilities[neg_batch_id, negatives] = 0
+        # Normalize probabilities for each row to sum to 1
+        sampling_probabilities /= sampling_probabilities.sum(dim=1, keepdim=True)
+        random_indices = torch.multinomial(sampling_probabilities, num_random_examples, replacement=True)
+        random_indices = random_indices.view(-1)
+
+        random_embeddings = self.kbc_model.embeddings[0](random_indices)
+        # (batch_size * num_random_examples, embedding_dim)
+        random_scores = scores[random_batch_id, random_indices]
+        # (batch_size * num_random_examples)
+        random_inputs = torch.cat([m[random_batch_id], random_embeddings, random_scores.unsqueeze(-1)], dim=1)
+        # (batch_size * num_random_examples, 2 * embedding_dim)
+        random_score_deltas = self.fc3(F.relu(self.fc2(random_inputs))).squeeze(-1)
+        # (batch_size * num_random_examples, 1)
+        random_new_scores = random_scores + random_score_deltas
+        # (batch_size * num_random_examples)
+
+        answer_scores = torch.cat([pos_new_scores, neg_new_scores])
+        # (p * batch_size + n * batch_size)
+        answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
+        # (p * batch_size + n * batch_size)
+
+        pairwise_diff = answer_scores.unsqueeze(1) - random_new_scores.unsqueeze(0)
+        # (p * batch_size + n * batch_size, batch_size * num_random_examples)
+        batch_mask = answer_batch_id.unsqueeze(1) == random_batch_id.unsqueeze(0)
+
+        # Margin loss
+        # answer_loss = torch.relu(1.0 - pairwise_diff) * batch_mask
+        # answer_loss = answer_loss.sum() / batch_mask.sum()
+
+        # RankNet loss: BCE applied to sigmoid of pairwise differences
+        answer_loss = -F.logsigmoid(pairwise_diff)
+        answer_loss = (answer_loss * batch_mask).sum() / batch_mask.sum()
+
+        return preference_loss + answer_loss
