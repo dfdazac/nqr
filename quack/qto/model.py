@@ -250,6 +250,46 @@ class KGReasoning(nn.Module):
         scores = scores * alpha + similarities * (1 - alpha)
         return scores
 
+    def rerank_ltr(self, scores, preferences):
+        # TODO: Later get labels as argument
+        labels = torch.ones_like(preferences)
+
+        # == Part 1: Embed preferences ==
+        m = self.embed_preferences(preferences.unsqueeze(0), labels.unsqueeze(0))
+
+        embeddings = self.kbc_model.embeddings[0].weight
+        m = m.expand(embeddings.shape[0], -1)
+        inputs = torch.cat([m, embeddings, scores.unsqueeze(-1)], dim=1)
+        score_deltas = self.fc3(F.relu(self.fc2(inputs))).squeeze(-1)
+        scores = scores + score_deltas
+        return scores
+
+    def embed_preferences(self, preferences, labels):
+        """Retrieve embeddings of entities specified as preferences"""
+        preferences_mask = preferences < 0
+        preferences[preferences_mask] = 0
+
+        # == Part 1: Compute preference embeddings m ==
+        m = self.kbc_model.embeddings[0](preferences)
+        # (batch_size, num_preferences, embedding_dim)
+
+        # Alternative 1: simple mean
+        m = torch.mean(m, dim=1)
+
+        # # Alternative 2: self attention and mean pooling
+        # m = torch.cat([m, labels.unsqueeze(-1)], dim=-1)
+        # # (batch_size, num_preferences, embedding_dim + 1)
+        # m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
+        # m = self.layer_norm_1(m)
+        # m = F.relu(self.fc1(m))
+        # m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
+        # m = self.layer_norm_2(m)
+        # # (batch_size, num_preferences, embedding_dim)
+        # m = torch.mean(m, dim=1)
+        # # (batch_size, embedding_dim)
+
+        return m
+
     def reranking_loss(self, preferences, labels, scores, positives, negatives):
         """
         Computes the margin-based loss for reranking.
@@ -268,26 +308,8 @@ class KGReasoning(nn.Module):
         batch_size = preferences.shape[0]
         device = preferences.device
 
-        # Retrieve embeddings of entities specified as preferences
-        preferences_mask = preferences < 0
-        preferences[preferences_mask] = 0
-
-        # == Part 1: Compute preference embeddings m ==
-        m = self.kbc_model.embeddings[0](preferences)
-        # (batch_size, num_preferences, embedding_dim)
-
-        m = torch.cat([m, labels.unsqueeze(-1)], dim=-1)
-        # (batch_size, num_preferences, embedding_dim + 1)
-
-        m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
-        m = self.layer_norm_1(m)
-        m = F.relu(self.fc1(m))
-        m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
-        m = self.layer_norm_2(m)
-        # (batch_size, num_preferences, embedding_dim)
-
-        m = torch.mean(m, dim=1)
-        # (batch_size, embedding_dim)
+        # == Part 1: Embed preferences ==
+        m = self.embed_preferences(preferences, labels)
 
         # == Part 2: Compute score adjustments for positive and negatives ==
         positives, pos_batch_id = positives
@@ -329,7 +351,7 @@ class KGReasoning(nn.Module):
         preference_loss = (preference_loss * batch_mask).sum() / batch_mask.sum()
 
         # == Part 3: Compute score adjustments for random examples ==
-        num_random_examples = 10
+        num_random_examples = 100
         random_batch_id = torch.repeat_interleave(torch.arange(batch_size, device=device), num_random_examples)
         sampling_probabilities = torch.ones(batch_size, self.nentity, device=device)
         # Make sure that the sampled entities are not in the answer set

@@ -5,14 +5,17 @@ import os
 import os.path as osp
 import pickle
 from collections import defaultdict
+import random
+from statistics import harmonic_mean
 
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import scipy.stats as stats
-import numpy as np
+import wandb
 
-from quack.qto.dataset import TestDataset
+from quack.qto.dataset import TestDataset, InfiniteDataLoaderIterator
 from quack.qto.model import KGReasoning
 from quack.qto.util import flatten_query, set_global_seed
 
@@ -62,13 +65,19 @@ def parse_args(args=None):
         description='Training and Testing Knowledge Graph Embedding Models',
         usage='train.py [<args>] [-h | --help]'
     )
-    
+
+    parser.add_argument('--do_train', action='store_true', help="do train")
     parser.add_argument('--do_valid', action='store_true', help="do valid")
     parser.add_argument('--do_test', action='store_true', help="do test")
     parser.add_argument('--do_cp', action='store_true', help="do cardinality prediction")
     parser.add_argument('--path', action='store_true', help="do interpretation study")
+    parser.add_argument('--wandb', action='store_true', help="log to wandb")
 
-    parser.add_argument('--train', action='store_true', help="do test")
+    parser.add_argument('--training_steps', default=1000, type=int, help='number of training steps')
+    parser.add_argument('--valid_frequency', default=5000, type=int, help='validation frequency in training steps')
+    parser.add_argument('--batch_size', default=32, type=int, help='training batch size')
+    parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
+
     parser.add_argument('--data_path', type=str, default=None, help="KG data path")
     parser.add_argument('--kbc_path', type=str, default=None, help="kbc model path")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
@@ -169,6 +178,114 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
             'num_easy_answer': num_easy,
         }
 
+
+def train(model, args, tasks, device, output_path):
+    '''
+    Train model on dataloader
+    '''
+    wandb.init(project="quack", mode='online' if args.wandb else 'disabled')
+
+    valid_queries, valid_hard_answers, valid_easy_answers, valid_sessions = load_data(args, tasks, "valid")
+    valid_queries = flatten_query(valid_queries)
+    valid_dataloader = DataLoader(
+        TestDataset(
+            valid_queries,
+            valid_sessions,
+            args.nentity,
+            args.nrelation,
+        ),
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
+    )
+
+    queries, answers, _, sessions = load_data(args, tasks, "train")
+    queries = flatten_query(queries)
+    dataloader = DataLoader(
+        TestDataset(
+            queries,
+            sessions,
+            args.nentity,
+            args.nrelation,
+        ),
+        batch_size=1,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn,
+        shuffle=True
+    )
+    iterator = InfiniteDataLoaderIterator(dataloader)
+
+    model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # Disable gradients for KG embeddings
+    for p in model.kbc_model.parameters():
+        p.requires_grad = False
+
+    avg_loss_list = []
+    for t in tqdm(range(args.training_steps), desc="Training", mininterval=1):
+        batch_scores = []
+        batch_positives = []
+        batch_positive_ids = []
+        batch_negatives = []
+        batch_negative_ids = []
+        batch_entities = []
+        batch_labels = []
+        num_preferences = random.randint(1, 10)
+        for i in range(args.batch_size):
+            flat_queries, queries, query_structures, sessions = next(iterator)
+            flat_queries = torch.tensor(flat_queries, device=device)
+            scores, *_ = model.embed_query(flat_queries, query_structures[0], 0)
+            batch_scores.append(scores)
+
+            # Pick a random session
+            positives, negatives = random.choice(sessions[0])
+            batch_positives.extend(positives)
+            batch_positive_ids.extend([i] * len(positives))
+            batch_negatives.extend(negatives)
+            batch_negative_ids.extend([i] * len(negatives))
+
+            # Pick a random preference (positive or negative) and cap it at num_preferences
+            label = 1 # random.randint(0, 1)
+            entities = positives if label == 1 else negatives
+            entities = random.sample(entities, min(num_preferences, len(entities)))
+            entities = torch.tensor(entities, device=device)
+
+            batch_entities.append(entities)
+            batch_labels.append(torch.full(entities.shape, label, device=device))
+
+        batch_scores = torch.cat(batch_scores)
+        batch_entities = pad_sequence(batch_entities, batch_first=True, padding_value=-1)
+        batch_labels = pad_sequence(batch_labels, batch_first=True, padding_value=-1)
+        batch_positives = torch.tensor(batch_positives, device=device)
+        batch_negatives = torch.tensor(batch_negatives, device=device)
+        batch_positive_ids = torch.tensor(batch_positive_ids, device=device)
+        batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
+        # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
+        loss = model.reranking_loss(
+            batch_entities,
+            batch_labels,
+            batch_scores,
+            (batch_positives, batch_positive_ids),
+            (batch_negatives, batch_negative_ids),
+        )
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        avg_loss_list.append(loss.item())
+
+        if t % 100 == 0:
+            wandb.log({"avg_loss": torch.tensor(avg_loss_list).mean().item()})
+            avg_loss_list = []
+
+        if (t + 1) % args.valid_frequency == 0:
+            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid")
+            wandb.log({k: v for k, v in all_metrics.items() if "cumulative" in k})
+
+    # Save model after training
+    # torch.save(model.state_dict(), osp.join(output_path, 'model.pt'))
+
+
 @torch.inference_mode()
 def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode):
     '''
@@ -181,8 +298,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     session_count = 0
 
     total_metrics_over_10_steps = defaultdict(list)
-
-    for flat_queries, queries, query_structures, sessions in tqdm(dataloader):
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, disable=True):
         sessions = sessions[0]
         if len(sessions) == 0:
             raise ValueError("No sessions found for query")
@@ -195,7 +311,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
         query_cumulative_metrics = defaultdict(float)
         for session in sessions:
             session_count += 1
-            session_scores = scores.clone()
+            # session_scores = scores.clone()
 
             positives, negatives = session
 
@@ -209,7 +325,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             for t in range(len(session_feedback)):
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(session_feedback[:t+1], device=device)
-                session_scores = model.rerank(session_scores, preferences, alpha=args.alpha)
+                session_scores = model.rerank_ltr(scores, preferences)
 
                 # Compute pairwise accuracy after reranking
                 pos_scores = session_scores[positives].unsqueeze(1)
@@ -293,8 +409,12 @@ def load_data(args, tasks, split):
     logging.info(f"Loading {split} data")
 
     queries = pickle.load(open(os.path.join(args.data_path, f"{split}-queries.pkl"), 'rb'))
-    hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
-    easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
+    if split == "train":
+        easy_answers = pickle.load(open(os.path.join(args.data_path, f"train-answers.pkl"), 'rb'))
+        hard_answers = None
+    else:
+        hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
+        easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
     sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
 
     query_structures = list(queries.keys())
@@ -302,9 +422,37 @@ def load_data(args, tasks, split):
         if query_name_dict[structure] not in tasks:
             queries.pop(structure)
         else:
+            # # Sample queries for testing
+            # samples = set()
+            # for query in queries[structure]:
+            #     if query not in sessions:
+            #         continue
+            #     samples.add(query)
+            #     if len(samples) == 10:
+            #         break
+            # queries[structure] = samples
+
             queries[structure] = {q for q in queries[structure] if q in sessions}
 
     return queries, hard_answers, easy_answers, sessions
+
+
+def evaluate_split(args, tasks, split, model, query_name_dict, device, output_path):
+    queries, hard_answers, easy_answers, sessions = load_data(args, tasks, split)
+    queries = flatten_query(queries)
+    dataloader = DataLoader(
+        TestDataset(
+            queries,
+            sessions,
+            args.nentity,
+            args.nrelation,
+        ),
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
+    )
+    evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, split)
+
 
 def main(args):
     set_global_seed(args.seed)
@@ -330,9 +478,9 @@ def main(args):
         os.makedirs(output_path)
 
     with open('%s/stats.txt'%args.data_path) as f:
-        entrel = f.readlines()
-        nentity = int(entrel[0].split(' ')[-1])
-        nrelation = int(entrel[1].split(' ')[-1])
+        stats = f.readlines()
+        num_entities = int(stats[0].split(' ')[-1])
+        num_relations = int(stats[1].split(' ')[-1])
     
     global id2ent, id2rel
     with open('%s/id2ent.pkl'%args.data_path, 'rb') as f:
@@ -342,49 +490,20 @@ def main(args):
     with open('%s/id2rel.pkl'%args.data_path, 'rb') as f:
         id2rel = pickle.load(f)
 
-    args.nentity = nentity
-    args.nrelation = nrelation
+    args.nentity = num_entities
+    args.nrelation = num_relations
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
-
-    valid_queries, valid_hard_answers, valid_easy_answers, valid_sessions = load_data(args, tasks, "valid")
-    test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
-    
-    valid_queries = flatten_query(valid_queries)
-    valid_dataloader = DataLoader(
-        TestDataset(
-            valid_queries,
-            valid_sessions,
-            args.nentity, 
-            args.nrelation, 
-        ), 
-        batch_size=args.test_batch_size,
-        num_workers=args.cpu_num, 
-        collate_fn=TestDataset.collate_fn
-    )
-
-    test_queries = flatten_query(test_queries)
-    test_dataloader = DataLoader(
-        TestDataset(
-            test_queries,
-            test_sessions,
-            args.nentity, 
-            args.nrelation, 
-        ), 
-        batch_size=args.test_batch_size,
-        num_workers=args.cpu_num, 
-        collate_fn=TestDataset.collate_fn
-    )
-    
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict)
 
-    cp_thrshd = None
+    if args.do_train:
+        train(model, args, tasks, device, output_path)
 
     if args.do_valid:
-        evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "Valid")
+        evaluate_split(args, tasks, "valid", model, query_name_dict, device, output_path)
 
     if args.do_test:
-        evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "Test")
+        evaluate_split(args, tasks, "test", model, query_name_dict, device, output_path)
 
 if __name__ == '__main__':
     main(parse_args())
