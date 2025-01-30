@@ -253,6 +253,12 @@ class KGReasoning(nn.Module):
         scores = scores * alpha + similarities * (1 - alpha)
         return scores
 
+    def rerank_random(self, scores, preferences):
+        # Randomly permute the scores
+        idx = torch.randperm(scores.size(0))
+        scores = scores[idx]
+        return scores
+
     def rerank_ltr(self, scores, preferences):
         # TODO: Later get labels as argument
         labels = torch.ones_like(preferences)

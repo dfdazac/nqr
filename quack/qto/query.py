@@ -327,6 +327,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 preferences = torch.tensor(session_feedback[:t+1], device=device)
                 if args.reranker == "cosine":
                     session_scores = model.rerank_cosine(scores, preferences, args.alpha)
+                elif args.reranker == "random":
+                    session_scores = model.rerank_random(scores, preferences)
                 elif args.reranker == "ltr":
                     session_scores = model.rerank_ltr(scores, preferences)
 
