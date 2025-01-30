@@ -352,7 +352,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     absolute_delta = instant_metrics[metric] - initial_metrics[metric]
                     relative_delta = absolute_delta / (1.0 if initial_metrics[metric] == 0 else initial_metrics[metric])
                     cumulative_metrics[f"{metric}_delta"] += relative_delta
-                    if t < 10 <= len(positives):
+                    if t < 10 <= len(session_feedback):
                         metrics_over_10_steps[metric].append(relative_delta)
 
                     if t == len(session_feedback) - 1:
