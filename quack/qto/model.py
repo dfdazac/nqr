@@ -262,14 +262,14 @@ class KGReasoning(nn.Module):
 
     def rerank_cosine(self, scores, preferences, labels, alpha):
         similarities = self.kbc_model.compute_similarities(preferences)
+
+        similarities[labels == 0] = -similarities[labels == 0]
+
         similarities = torch.sum(similarities, dim=0)
         scores = scores * alpha + similarities * (1 - alpha)
         return scores
 
     def rerank_ltr(self, scores, preferences, labels):
-        # TODO: Later get labels as argument
-        labels = torch.ones_like(preferences)
-
         # == Part 1: Embed preferences ==
         m = self.embed_preferences(preferences.unsqueeze(0), labels.unsqueeze(0))
 
