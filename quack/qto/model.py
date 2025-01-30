@@ -108,7 +108,10 @@ class KGReasoning(nn.Module):
         self.layer_norm_2 = nn.LayerNorm(embedding_dim)
 
         # Linear layers for transformation
-        self.fc2 = nn.Linear(embedding_dim * 2 + 1, embedding_dim)
+        # For mean preference embedding
+        # self.fc2 = nn.Linear(embedding_dim + 1 + embedding_dim + 1, embedding_dim) # Input: [preference_embedding, preference_label, entity_embedding, score]
+        # For self-attention preference embedding
+        self.fc2 = nn.Linear(embedding_dim * 2 + 1, embedding_dim) # Input: [preference_embedding, entity_embedding, score]
         self.fc3 = nn.Linear(embedding_dim, 1)
 
 
@@ -244,7 +247,7 @@ class KGReasoning(nn.Module):
             ans.append(anchor)
             return ans, ele_ent
 
-    def rerank(self, scores, preferences, alpha):
+    def rerank_cosine(self, scores, preferences, alpha):
         similarities = self.kbc_model.compute_similarities(preferences)
         similarities = torch.sum(similarities, dim=0)
         scores = scores * alpha + similarities * (1 - alpha)
@@ -272,21 +275,21 @@ class KGReasoning(nn.Module):
         # == Part 1: Compute preference embeddings m ==
         m = self.kbc_model.embeddings[0](preferences)
         # (batch_size, num_preferences, embedding_dim)
+        m = torch.cat([m, labels.unsqueeze(-1)], dim=-1)
+        # (batch_size, num_preferences, embedding_dim + 1)
 
-        # Alternative 1: simple mean
-        m = torch.mean(m, dim=1)
-
-        # # Alternative 2: self attention and mean pooling
-        # m = torch.cat([m, labels.unsqueeze(-1)], dim=-1)
-        # # (batch_size, num_preferences, embedding_dim + 1)
-        # m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
-        # m = self.layer_norm_1(m)
-        # m = F.relu(self.fc1(m))
-        # m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
-        # m = self.layer_norm_2(m)
-        # # (batch_size, num_preferences, embedding_dim)
+        # # Alternative 1: simple mean
         # m = torch.mean(m, dim=1)
-        # # (batch_size, embedding_dim)
+
+        # Alternative 2: self attention and mean pooling
+        m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
+        m = self.layer_norm_1(m)
+        m = F.relu(self.fc1(m))
+        m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
+        m = self.layer_norm_2(m)
+        # (batch_size, num_preferences, embedding_dim)
+        m = torch.mean(m, dim=1)
+        # (batch_size, embedding_dim)
 
         return m
 

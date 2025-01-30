@@ -6,7 +6,7 @@ import os.path as osp
 import pickle
 from collections import defaultdict
 import random
-from statistics import harmonic_mean
+import time
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -89,15 +89,15 @@ def parse_args(args=None):
     parser.add_argument('--thrshd', type=float, default=0.001, help='thrshd for neural adjacency matrix')
     parser.add_argument('--neg_scale', type=int, default=1, help='scaling neural adjacency matrix for negation')
     
-    parser.add_argument('--tasks', default='1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u.up', type=str, help="tasks connected by dot, refer to the BetaE paper for detailed meaning and structure of each task")
+    parser.add_argument('--tasks', default='1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF', type=str, help="tasks connected by dot, refer to the BetaE paper for detailed meaning and structure of each task")
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
     parser.add_argument("--preference", default="positive", choices=["positive", "negative"], help="preference type")
     parser.add_argument('--reranker',
-                        default='cosine',
+                        default='ltr',
                         type=str,
-                        choices=['greedy', 'cosine'],
+                        choices=['random', 'greedy', 'cosine', 'ltr'],
                         help='reranker method')
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
 
@@ -228,7 +228,7 @@ def train(model, args, tasks, device, output_path):
         batch_positive_ids = []
         batch_negatives = []
         batch_negative_ids = []
-        batch_entities = []
+        batch_preferences = []
         batch_labels = []
         num_preferences = random.randint(1, 10)
         for i in range(args.batch_size):
@@ -245,16 +245,16 @@ def train(model, args, tasks, device, output_path):
             batch_negative_ids.extend([i] * len(negatives))
 
             # Pick a random preference (positive or negative) and cap it at num_preferences
-            label = 1 # random.randint(0, 1)
-            entities = positives if label == 1 else negatives
-            entities = random.sample(entities, min(num_preferences, len(entities)))
-            entities = torch.tensor(entities, device=device)
+            label = random.randint(0, 1)
+            preferences = positives if label == 1 else negatives
+            preferences = random.sample(preferences, min(num_preferences, len(preferences)))
+            preferences = torch.tensor(preferences, device=device)
 
-            batch_entities.append(entities)
-            batch_labels.append(torch.full(entities.shape, label, device=device))
+            batch_preferences.append(preferences)
+            batch_labels.append(torch.full(preferences.shape, label, device=device))
 
         batch_scores = torch.cat(batch_scores)
-        batch_entities = pad_sequence(batch_entities, batch_first=True, padding_value=-1)
+        batch_preferences = pad_sequence(batch_preferences, batch_first=True, padding_value=-1)
         batch_labels = pad_sequence(batch_labels, batch_first=True, padding_value=-1)
         batch_positives = torch.tensor(batch_positives, device=device)
         batch_negatives = torch.tensor(batch_negatives, device=device)
@@ -262,7 +262,7 @@ def train(model, args, tasks, device, output_path):
         batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
         # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
         loss = model.reranking_loss(
-            batch_entities,
+            batch_preferences,
             batch_labels,
             batch_scores,
             (batch_positives, batch_positive_ids),
@@ -279,15 +279,15 @@ def train(model, args, tasks, device, output_path):
             avg_loss_list = []
 
         if (t + 1) % args.valid_frequency == 0:
-            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid")
+            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", disable_bar=True)
             wandb.log({k: v for k, v in all_metrics.items() if "cumulative" in k})
 
     # Save model after training
-    # torch.save(model.state_dict(), osp.join(output_path, 'model.pt'))
+    torch.save(model.state_dict(), osp.join(output_path, 'model.pt'))
 
 
 @torch.inference_mode()
-def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode):
+def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode, disable_bar=False):
     '''
     Evaluate queries in dataloader
     '''
@@ -298,7 +298,7 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
     session_count = 0
 
     total_metrics_over_10_steps = defaultdict(list)
-    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, disable=True):
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, disable=disable_bar):
         sessions = sessions[0]
         if len(sessions) == 0:
             raise ValueError("No sessions found for query")
@@ -325,7 +325,10 @@ def evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dic
             for t in range(len(session_feedback)):
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(session_feedback[:t+1], device=device)
-                session_scores = model.rerank_ltr(scores, preferences)
+                if args.reranker == "cosine":
+                    session_scores = model.rerank_cosine(scores, preferences, args.alpha)
+                elif args.reranker == "ltr":
+                    session_scores = model.rerank_ltr(scores, preferences)
 
                 # Compute pairwise accuracy after reranking
                 pos_scores = session_scores[positives].unsqueeze(1)
@@ -422,16 +425,6 @@ def load_data(args, tasks, split):
         if query_name_dict[structure] not in tasks:
             queries.pop(structure)
         else:
-            # # Sample queries for testing
-            # samples = set()
-            # for query in queries[structure]:
-            #     if query not in sessions:
-            #         continue
-            #     samples.add(query)
-            #     if len(samples) == 10:
-            #         break
-            # queries[structure] = samples
-
             queries[structure] = {q for q in queries[structure] if q in sessions}
 
     return queries, hard_answers, easy_answers, sessions
@@ -464,14 +457,18 @@ def main(args):
     if args.data_path.split('/')[1].split('-')[1] == "237":
         dataset_name += "-237"
 
-    folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}"
+    folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
     if args.reranker == "cosine":
-        folder_name += f"_cosine_{args.alpha}"
+        folder_name += f"_{args.alpha}"
+    elif args.reranker == "ltr":
+        folder_name += f"_{args.lr}"
     if args.do_valid:
         folder_name += "_valid"
     if args.do_test:
         folder_name += "_test"
     folder_name += "_positive" if args.preference == "positive" else "_negative"
+    # Get unix timestamp for unique folder name
+    folder_name += f"_{int(time.time())}"
 
     output_path = os.path.join('results', folder_name)
     if not os.path.exists(output_path):
