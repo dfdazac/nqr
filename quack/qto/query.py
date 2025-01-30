@@ -317,20 +317,25 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
             if args.preference == "positive":
                 session_feedback = positives[:10]
+                label = 1
             else:
                 session_feedback = negatives[:10]
+                label = 0
 
             cumulative_metrics = defaultdict(float)
             metrics_over_10_steps = defaultdict(list)
             for t in range(len(session_feedback)):
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(session_feedback[:t+1], device=device)
+                labels = torch.full(preferences.shape, label, device=device)
                 if args.reranker == "cosine":
-                    session_scores = model.rerank_cosine(scores, preferences, args.alpha)
+                    session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha)
                 elif args.reranker == "random":
-                    session_scores = model.rerank_random(scores, preferences)
+                    session_scores = model.rerank_random(scores, preferences, labels)
+                elif args.reranker == "greedy":
+                    session_scores = model.rerank_greedy(scores, preferences, labels)
                 elif args.reranker == "ltr":
-                    session_scores = model.rerank_ltr(scores, preferences)
+                    session_scores = model.rerank_ltr(scores, preferences, labels)
 
                 # Compute pairwise accuracy after reranking
                 pos_scores = session_scores[positives].unsqueeze(1)

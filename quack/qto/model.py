@@ -247,19 +247,26 @@ class KGReasoning(nn.Module):
             ans.append(anchor)
             return ans, ele_ent
 
-    def rerank_cosine(self, scores, preferences, alpha):
-        similarities = self.kbc_model.compute_similarities(preferences)
-        similarities = torch.sum(similarities, dim=0)
-        scores = scores * alpha + similarities * (1 - alpha)
-        return scores
-
-    def rerank_random(self, scores, preferences):
+    def rerank_random(self, scores, preferences, labels):
         # Randomly permute the scores
         idx = torch.randperm(scores.size(0))
         scores = scores[idx]
         return scores
 
-    def rerank_ltr(self, scores, preferences):
+    def rerank_greedy(self, scores, preferences, labels):
+        max_score = scores.max()
+        min_score = scores.min()
+        scores[preferences[labels == 1]] = max_score + 1
+        scores[preferences[labels == 0]] = min_score - 1
+        return scores
+
+    def rerank_cosine(self, scores, preferences, labels, alpha):
+        similarities = self.kbc_model.compute_similarities(preferences)
+        similarities = torch.sum(similarities, dim=0)
+        scores = scores * alpha + similarities * (1 - alpha)
+        return scores
+
+    def rerank_ltr(self, scores, preferences, labels):
         # TODO: Later get labels as argument
         labels = torch.ones_like(preferences)
 
