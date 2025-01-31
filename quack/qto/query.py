@@ -73,7 +73,7 @@ def parse_args(args=None):
     parser.add_argument('--path', action='store_true', help="do interpretation study")
     parser.add_argument('--wandb', action='store_true', help="log to wandb")
 
-    parser.add_argument('--training_steps', default=1000, type=int, help='number of training steps')
+    parser.add_argument('--num_epochs', default=1000, type=int, help='number of training epochs')
     parser.add_argument('--valid_frequency', default=5000, type=int, help='validation frequency in training steps')
     parser.add_argument('--batch_size', default=32, type=int, help='training batch size')
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
@@ -227,7 +227,6 @@ def train(model, args, tasks, device, output_path):
         collate_fn=TestDataset.collate_fn,
         shuffle=True
     )
-    iterator = InfiniteDataLoaderIterator(dataloader)
 
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -236,64 +235,78 @@ def train(model, args, tasks, device, output_path):
         p.requires_grad = False
 
     avg_loss_list = []
-    for t in tqdm(range(args.training_steps), desc="Training", mininterval=1):
-        batch_scores = []
-        batch_positives = []
-        batch_positive_ids = []
-        batch_negatives = []
-        batch_negative_ids = []
-        batch_preferences = []
-        batch_labels = []
-        num_preferences = random.randint(1, 10)
-        for i in range(args.batch_size):
-            flat_queries, queries, query_structures, sessions = next(iterator)
-            flat_queries = torch.tensor(flat_queries, device=device)
-            scores, *_ = model.embed_query(flat_queries, query_structures[0], 0)
-            batch_scores.append(scores)
+    for epoch in range(1, args.num_epochs + 1):
+        train_bar = tqdm(range(len(dataloader)), desc=f"Epoch {epoch}/{args.num_epochs}", mininterval=1)
+        iterator = iter(dataloader)
+        for t in range(len(dataloader)):
+            batch_scores = []
+            batch_positives = []
+            batch_positive_ids = []
+            batch_negatives = []
+            batch_negative_ids = []
+            batch_preferences = []
+            batch_labels = []
+            num_preferences = random.randint(1, 10)
+            for i in range(args.batch_size):
+                try:
+                    flat_queries, queries, query_structures, sessions = next(iterator)
+                except StopIteration:
+                    break
 
-            # Pick a random session
-            positives, negatives = random.choice(sessions[0])
-            batch_positives.extend(positives)
-            batch_positive_ids.extend([i] * len(positives))
-            batch_negatives.extend(negatives)
-            batch_negative_ids.extend([i] * len(negatives))
+                flat_queries = torch.tensor(flat_queries, device=device)
+                scores, *_ = model.embed_query(flat_queries, query_structures[0], 0)
+                batch_scores.append(scores)
 
-            # Pick a random preference (positive or negative) and cap it at num_preferences
-            label = random.randint(0, 1)
-            preferences = positives if label == 1 else negatives
-            preferences = random.sample(preferences, min(num_preferences, len(preferences)))
-            preferences = torch.tensor(preferences, device=device)
+                # Pick a random session
+                positives, negatives = random.choice(sessions[0])
+                batch_positives.extend(positives)
+                batch_positive_ids.extend([i] * len(positives))
+                batch_negatives.extend(negatives)
+                batch_negative_ids.extend([i] * len(negatives))
 
-            batch_preferences.append(preferences)
-            batch_labels.append(torch.full(preferences.shape, label, device=device))
+                # Pick a random preference (positive or negative) and cap it at num_preferences
+                label = random.randint(0, 1)
+                preferences = positives if label == 1 else negatives
+                preferences = random.sample(preferences, min(num_preferences, len(preferences)))
+                preferences = torch.tensor(preferences, device=device)
 
-        batch_scores = torch.cat(batch_scores)
-        batch_preferences = pad_sequence(batch_preferences, batch_first=True, padding_value=-1)
-        batch_labels = pad_sequence(batch_labels, batch_first=True, padding_value=-1)
-        batch_positives = torch.tensor(batch_positives, device=device)
-        batch_negatives = torch.tensor(batch_negatives, device=device)
-        batch_positive_ids = torch.tensor(batch_positive_ids, device=device)
-        batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
-        # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
-        loss = model.reranking_loss(
-            batch_preferences,
-            batch_labels,
-            batch_scores,
-            (batch_positives, batch_positive_ids),
-            (batch_negatives, batch_negative_ids),
-        )
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+                batch_preferences.append(preferences)
+                batch_labels.append(torch.full(preferences.shape, label, device=device))
 
-        avg_loss_list.append(loss.item())
+            if len(batch_scores) == 0:
+                break
 
-        if t % 100 == 0:
-            wandb.log({"avg_loss": torch.tensor(avg_loss_list).mean().item()})
-            avg_loss_list = []
+            train_bar.update(len(batch_scores))
 
-        if (t + 1) % args.valid_frequency == 0:
-            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", disable_bar=True)
+            batch_scores = torch.cat(batch_scores)
+            batch_preferences = pad_sequence(batch_preferences, batch_first=True, padding_value=-1)
+            batch_labels = pad_sequence(batch_labels, batch_first=True, padding_value=-1)
+            batch_positives = torch.tensor(batch_positives, device=device)
+            batch_negatives = torch.tensor(batch_negatives, device=device)
+            batch_positive_ids = torch.tensor(batch_positive_ids, device=device)
+            batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
+            # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
+            loss = model.reranking_loss(
+                batch_preferences,
+                batch_labels,
+                batch_scores,
+                (batch_positives, batch_positive_ids),
+                (batch_negatives, batch_negative_ids),
+            )
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            avg_loss_list.append(loss.item())
+
+            if t % 100 == 0:
+                wandb.log({"avg_loss": torch.tensor(avg_loss_list).mean().item()})
+                avg_loss_list = []
+
+
+        train_bar.close()
+        if (epoch + 1) % args.valid_frequency == 0:
+            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid")
             wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
 
     all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test")
@@ -303,7 +316,7 @@ def train(model, args, tasks, device, output_path):
 
 
 @torch.inference_mode()
-def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode, disable_bar=False):
+def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode):
     '''
     Evaluate queries in dataloader
     '''
@@ -314,7 +327,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     session_count = 0
 
     total_metrics_over_10_steps = defaultdict(list)
-    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, disable=disable_bar):
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode}", mininterval=1):
         sessions = sessions[0]
         if len(sessions) == 0:
             raise ValueError("No sessions found for query")
