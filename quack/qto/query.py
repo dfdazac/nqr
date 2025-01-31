@@ -7,6 +7,7 @@ import pickle
 from collections import defaultdict
 import random
 import time
+from pprint import pprint
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -183,7 +184,7 @@ def train(model, args, tasks, device, output_path):
     '''
     Train model on dataloader
     '''
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled')
+    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args))
 
     valid_queries, valid_hard_answers, valid_easy_answers, valid_sessions = load_data(args, tasks, "valid")
     valid_queries = flatten_query(valid_queries)
@@ -531,6 +532,8 @@ def main(args):
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict)
+
+    pprint(vars(args))
 
     if args.do_train:
         train(model, args, tasks, device, output_path)

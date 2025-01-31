@@ -173,3 +173,4 @@ results/*
 ~results/.gitkeep
 
 neural_adj/
+jobs/
