@@ -230,8 +230,12 @@ def describe(args: Arguments):
             query_count[structure] = num_queries
             session_count[structure] = num_sessions
 
+        query_count["Total"] = sum(query_count.values())
+        session_count["Total"] = sum(session_count.values())
+
         structures = list(structure_to_queries.keys())
-        structure_names = [query_name_dict[s] for s in structures]
+        structure_names = [query_name_dict[s] for s in structures] + ["Total"]
+        structures += ["Total"]
 
         cell_divider = "-" * 10
         print_row(cell_divider, [cell_divider for _ in structures])
