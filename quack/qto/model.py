@@ -56,7 +56,7 @@ def neural_adj_matrix(model, rel, nentity, device, thrshd, adj_list):
     return relation_embedding
 
 class KGReasoning(nn.Module):
-    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict):
+    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, preference_embedding="mean", num_layers=2, activation="relu"):
         super(KGReasoning, self).__init__()
         self.nentity = args.nentity
         self.nrelation = args.nrelation
@@ -101,19 +101,31 @@ class KGReasoning(nn.Module):
             torch.save(self.relation_embeddings, filename)
 
         embedding_dim = self.kbc_model.rank * 2
-        self.self_attention_1 = nn.MultiheadAttention(embed_dim=embedding_dim + 1, num_heads=1, batch_first=True)
-        self.layer_norm_1 = nn.LayerNorm(embedding_dim + 1)
-        self.fc1 = nn.Linear(embedding_dim + 1, embedding_dim)
-        self.self_attention_2 = nn.MultiheadAttention(embed_dim=embedding_dim, num_heads=4, batch_first=True)
-        self.layer_norm_2 = nn.LayerNorm(embedding_dim)
 
-        # Linear layers for transformation
-        # For mean preference embedding
-        # self.fc2 = nn.Linear(embedding_dim + 1 + embedding_dim + 1, embedding_dim) # Input: [preference_embedding, preference_label, entity_embedding, score]
-        # For self-attention preference embedding
-        self.fc2 = nn.Linear(embedding_dim * 2 + 1, embedding_dim) # Input: [preference_embedding, entity_embedding, score]
-        self.fc3 = nn.Linear(embedding_dim, 1)
+        self.preference_embedding = preference_embedding
+        self.num_layers = num_layers
+        if preference_embedding != "none":
+            if activation == "relu":
+                activation_class = nn.ReLU
+            elif activation == "elu":
+                activation_class = nn.ELU
+            else:
+                raise ValueError(f"Invalid activation function {activation}")
+            if preference_embedding == "selfattn":
+                self.self_attention_1 = nn.MultiheadAttention(embed_dim=embedding_dim + 1, num_heads=1,
+                                                              batch_first=True)
+                self.layer_norm_1 = nn.LayerNorm(embedding_dim + 1)
+                self.fc1 = nn.Sequential(nn.Linear(embedding_dim + 1, embedding_dim), activation_class())
+                if self.num_layers == 2:
+                    self.self_attention_2 = nn.MultiheadAttention(embed_dim=embedding_dim, num_heads=4, batch_first=True)
+                    self.layer_norm_2 = nn.LayerNorm(embedding_dim)
 
+                fc2 = nn.Linear(embedding_dim * 2 + 1, embedding_dim)  # Input: [preference_embedding, entity_embedding, score]
+            elif preference_embedding == "mean":
+                fc2 = nn.Linear(embedding_dim + 1 + embedding_dim + 1, embedding_dim)  # Input: [preference_embedding, preference_label, entity_embedding, score]
+            else:
+                raise ValueError(f"Invalid preference embedding type {preference_embedding}")
+            self.adjust_net = nn.Sequential(fc2, activation_class(), nn.Linear(embedding_dim, 1))
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -272,12 +284,9 @@ class KGReasoning(nn.Module):
     def rerank_ltr(self, scores, preferences, labels):
         # == Part 1: Embed preferences ==
         m = self.embed_preferences(preferences.unsqueeze(0), labels.unsqueeze(0))
-
         embeddings = self.kbc_model.embeddings[0].weight
         m = m.expand(embeddings.shape[0], -1)
-        inputs = torch.cat([m, embeddings, scores.unsqueeze(-1)], dim=1)
-        score_deltas = self.fc3(F.relu(self.fc2(inputs))).squeeze(-1)
-        scores = scores + score_deltas
+        scores = self.adjust_scores(m, embeddings, scores)
         return scores
 
     def embed_preferences(self, preferences, labels):
@@ -292,19 +301,45 @@ class KGReasoning(nn.Module):
         # (batch_size, num_preferences, embedding_dim + 1)
 
         # # Alternative 1: simple mean
-        # m = torch.mean(m, dim=1)
-
-        # Alternative 2: self attention and mean pooling
-        m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
-        m = self.layer_norm_1(m)
-        m = F.relu(self.fc1(m))
-        m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
-        m = self.layer_norm_2(m)
-        # (batch_size, num_preferences, embedding_dim)
-        m = torch.mean(m, dim=1)
-        # (batch_size, embedding_dim)
+        if self.preference_embedding == "mean":
+            m = torch.mean(m, dim=1)
+            # (batch_size, embedding_dim + 1)
+        elif self.preference_embedding == "selfattn":
+            # Alternative 2: self attention and mean pooling
+            m = self.self_attention_1(m, m, m, key_padding_mask=preferences_mask)[0]
+            m = self.layer_norm_1(m)
+            m = self.fc1(m)
+            if self.num_layers == 2:
+                m = self.self_attention_2(m, m, m, key_padding_mask=preferences_mask)[0]
+                m = self.layer_norm_2(m)
+            # (batch_size, num_preferences, embedding_dim)
+            m = torch.mean(m, dim=1)
+            # (batch_size, embedding_dim)
+        else:
+            raise ValueError(f"Invalid preference embedding type {self.preference_embedding}")
 
         return m
+
+    def adjust_scores(self, pref_embeddings, candidates, scores):
+        inputs = torch.cat([pref_embeddings, candidates, scores.unsqueeze(-1)], dim=1)
+        # (p * batch_size, 2 * embedding_dim)
+        score_deltas = self.adjust_net(inputs).squeeze(-1)
+        # (p * batch_size, 1)
+        new_scores = scores + score_deltas
+        # (p * batch_size)
+        return new_scores
+
+    @staticmethod
+    def _ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id):
+        pairwise_diff = pos_scores.unsqueeze(1) - neg_scores.unsqueeze(0)
+        # (p * batch_size, n * batch_size)
+        batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
+        # (p * batch_size, n * batch_size)
+
+        # RankNet loss: BCE applied to sigmoid of pairwise differences
+        loss = -F.logsigmoid(pairwise_diff)
+        loss = (loss * batch_mask).sum() / batch_mask.sum()
+        return loss
 
     def reranking_loss(self, preferences, labels, scores, positives, negatives):
         """
@@ -316,7 +351,6 @@ class KGReasoning(nn.Module):
             scores (Tensor): Initial scores from the base QA model, shape (batch_size, num_entities).
             positives (Tensor): Padded tensor of positively preferred entities.
             negatives (Tensor): Padded tensor of negatively preferred entities.
-            margin (float): Margin for ranking loss.
 
         Returns:
             Tensor: Computed loss.
@@ -331,42 +365,20 @@ class KGReasoning(nn.Module):
         positives, pos_batch_id = positives
         negatives, neg_batch_id = negatives
 
-        pos_embeddings = self.kbc_model.embeddings[0](positives)
-        # (p * batch_size, embedding_dim)
-        pos_scores = scores[pos_batch_id, positives]
-        # (p * batch_size)
-        pos_inputs = torch.cat([m[pos_batch_id], pos_embeddings, pos_scores.unsqueeze(-1)], dim=1)
-        # (p * batch_size, 2 * embedding_dim)
-        pos_score_deltas = self.fc3(F.relu(self.fc2(pos_inputs))).squeeze(-1)
-        # (p * batch_size, 1)
-        pos_new_scores = pos_scores + pos_score_deltas
+        pos_scores = self.adjust_scores(pref_embeddings=m[pos_batch_id],
+                                        candidates=self.kbc_model.embeddings[0](positives),
+                                        scores=scores[pos_batch_id, positives])
         # (p * batch_size)
 
-        neg_embeddings = self.kbc_model.embeddings[0](negatives)
-        # (n * batch_size, embedding_dim)
-        neg_scores = scores[neg_batch_id, negatives]
-        # (n * batch_size)
-        neg_inputs = torch.cat([m[neg_batch_id], neg_embeddings, neg_scores.unsqueeze(-1)], dim=1)
-        # (n * batch_size, 2 * embedding_dim)
-        neg_score_deltas = self.fc3(F.relu(self.fc2(neg_inputs))).squeeze(-1)
-        # (n * batch_size, 1)
-        neg_new_scores = neg_scores + neg_score_deltas
+        neg_scores = self.adjust_scores(pref_embeddings=m[neg_batch_id],
+                                        candidates=self.kbc_model.embeddings[0](negatives),
+                                        scores=scores[neg_batch_id, negatives])
         # (n * batch_size)
 
-        pairwise_diff = pos_new_scores.unsqueeze(1) - neg_new_scores.unsqueeze(0)
-        # (p * batch_size, n * batch_size)
-        batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
-        # (p * batch_size, n * batch_size)
-
-        # Margin loss
-        # preference_loss = torch.relu(1.0 - pairwise_diff) * batch_mask
-        # preference_loss = preference_loss.sum() / batch_mask.sum()
-
-        # RankNet loss: BCE applied to sigmoid of pairwise differences
-        preference_loss = -F.logsigmoid(pairwise_diff)
-        preference_loss = (preference_loss * batch_mask).sum() / batch_mask.sum()
+        preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
 
         # == Part 3: Compute score adjustments for random examples ==
+        # Get negative examples
         num_random_examples = 100
         random_batch_id = torch.repeat_interleave(torch.arange(batch_size, device=device), num_random_examples)
         sampling_probabilities = torch.ones(batch_size, self.nentity, device=device)
@@ -378,32 +390,15 @@ class KGReasoning(nn.Module):
         random_indices = torch.multinomial(sampling_probabilities, num_random_examples, replacement=True)
         random_indices = random_indices.view(-1)
 
-        random_embeddings = self.kbc_model.embeddings[0](random_indices)
-        # (batch_size * num_random_examples, embedding_dim)
-        random_scores = scores[random_batch_id, random_indices]
-        # (batch_size * num_random_examples)
-        random_inputs = torch.cat([m[random_batch_id], random_embeddings, random_scores.unsqueeze(-1)], dim=1)
-        # (batch_size * num_random_examples, 2 * embedding_dim)
-        random_score_deltas = self.fc3(F.relu(self.fc2(random_inputs))).squeeze(-1)
-        # (batch_size * num_random_examples, 1)
-        random_new_scores = random_scores + random_score_deltas
+        random_new_scores = self.adjust_scores(pref_embeddings=m[random_batch_id],
+                                               candidates=self.kbc_model.embeddings[0](random_indices),
+                                               scores=scores[random_batch_id, random_indices])
         # (batch_size * num_random_examples)
 
-        answer_scores = torch.cat([pos_new_scores, neg_new_scores])
+        answer_scores = torch.cat([pos_scores, neg_scores])
         # (p * batch_size + n * batch_size)
         answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
         # (p * batch_size + n * batch_size)
-
-        pairwise_diff = answer_scores.unsqueeze(1) - random_new_scores.unsqueeze(0)
-        # (p * batch_size + n * batch_size, batch_size * num_random_examples)
-        batch_mask = answer_batch_id.unsqueeze(1) == random_batch_id.unsqueeze(0)
-
-        # Margin loss
-        # answer_loss = torch.relu(1.0 - pairwise_diff) * batch_mask
-        # answer_loss = answer_loss.sum() / batch_mask.sum()
-
-        # RankNet loss: BCE applied to sigmoid of pairwise differences
-        answer_loss = -F.logsigmoid(pairwise_diff)
-        answer_loss = (answer_loss * batch_mask).sum() / batch_mask.sum()
+        answer_loss = self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id)
 
         return preference_loss + answer_loss

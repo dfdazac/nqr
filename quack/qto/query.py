@@ -73,6 +73,7 @@ def parse_args(args=None):
     parser.add_argument('--do_cp', action='store_true', help="do cardinality prediction")
     parser.add_argument('--path', action='store_true', help="do interpretation study")
     parser.add_argument('--wandb', action='store_true', help="log to wandb")
+    parser.add_argument('--test_run', action='store_true', help="run on a small dataset")
 
     parser.add_argument('--num_epochs', default=1000, type=int, help='number of training epochs')
     parser.add_argument('--valid_frequency', default=5000, type=int, help='validation frequency in training steps')
@@ -101,7 +102,9 @@ def parse_args(args=None):
                         choices=['random', 'greedy', 'cosine', 'ltr'],
                         help='reranker method')
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
-
+    parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
+    parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
+    parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
 
     return parser.parse_args(args)
 
@@ -186,47 +189,41 @@ def train(model, args, tasks, device, output_path):
     '''
     wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args))
 
+    queries, answers, _, sessions = load_data(args, tasks, "train")
+    queries = flatten_query(queries)
+    train_dataset = TestDataset(queries, sessions, args.nentity, args.nrelation)
+
     valid_queries, valid_hard_answers, valid_easy_answers, valid_sessions = load_data(args, tasks, "valid")
     valid_queries = flatten_query(valid_queries)
-    valid_dataloader = DataLoader(
-        TestDataset(
-            valid_queries,
-            valid_sessions,
-            args.nentity,
-            args.nrelation,
-        ),
-        batch_size=args.test_batch_size,
-        num_workers=args.cpu_num,
-        collate_fn=TestDataset.collate_fn
-    )
+    valid_dataset = TestDataset(valid_queries, valid_sessions, args.nentity, args.nrelation)
 
     test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
     test_queries = flatten_query(test_queries)
-    test_dataloader = DataLoader(
-        TestDataset(
-            test_queries,
-            test_sessions,
-            args.nentity,
-            args.nrelation,
-        ),
-        batch_size=args.test_batch_size,
-        num_workers=args.cpu_num,
-        collate_fn=TestDataset.collate_fn
-    )
+    test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
 
-    queries, answers, _, sessions = load_data(args, tasks, "train")
-    queries = flatten_query(queries)
+    if args.test_run:
+        train_dataset = torch.utils.data.Subset(train_dataset, range(10))
+        valid_dataset = torch.utils.data.Subset(valid_dataset, range(10))
+        test_dataset = torch.utils.data.Subset(test_dataset, range(10))
+
     dataloader = DataLoader(
-        TestDataset(
-            queries,
-            sessions,
-            args.nentity,
-            args.nrelation,
-        ),
+        train_dataset,
         batch_size=1,
         num_workers=args.cpu_num,
         collate_fn=TestDataset.collate_fn,
         shuffle=True
+    )
+    valid_dataloader = DataLoader(
+        valid_dataset,
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
     )
 
     model.to(device)
@@ -391,7 +388,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     if t == len(session_feedback) - 1:
                         reranked_delta[query_structures[0]][metric].append(absolute_delta)
 
-                if t < 10 <= len(positives):
+                if t < 10 <= len(session_feedback):
                     metrics_over_10_steps['pairwise_accuracy'].append(pairwise_accuracy)
 
             for metric in cumulative_metrics:
@@ -531,7 +528,7 @@ def main(args):
     args.nrelation = num_relations
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
-    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict)
+    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation)
 
     pprint(vars(args))
 
