@@ -199,6 +199,20 @@ def train(model, args, tasks, device, output_path):
         collate_fn=TestDataset.collate_fn
     )
 
+    test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
+    test_queries = flatten_query(test_queries)
+    test_dataloader = DataLoader(
+        TestDataset(
+            test_queries,
+            test_sessions,
+            args.nentity,
+            args.nrelation,
+        ),
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
+    )
+
     queries, answers, _, sessions = load_data(args, tasks, "train")
     queries = flatten_query(queries)
     dataloader = DataLoader(
@@ -280,10 +294,12 @@ def train(model, args, tasks, device, output_path):
 
         if (t + 1) % args.valid_frequency == 0:
             all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", disable_bar=True)
-            wandb.log({k: v for k, v in all_metrics.items() if "cumulative" in k})
+            wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
 
+    all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test")
+    wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
     # Save model after training
-    torch.save(model.state_dict(), osp.join(output_path, 'model.pt'))
+    torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
 @torch.inference_mode()
@@ -382,7 +398,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     
     num_query_structures = 0
     num_queries = 0
-    with open(osp.join(output_path, 'all_metrics.txt'), "w") as f:
+    with open(osp.join(output_path, f'all_metrics_{mode}.txt'), "w") as f:
         for query_structure in metrics:
             log_metrics(mode + " " + query_name_dict[query_structure],
                         metrics[query_structure],
@@ -394,7 +410,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             num_queries += metrics[query_structure]['num_queries']
             num_query_structures += 1
 
-    with open(osp.join(output_path, "p_values.txt"), "w") as f:
+    with open(osp.join(output_path, f"p_values_{mode}.txt"), "w") as f:
         for query_structure in reranked_delta:
             p_values_dict = dict()
             for metric, deltas in reranked_delta[query_structure].items():
@@ -402,13 +418,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 p_values_dict[metric] = p_value
             log_metrics(f"{mode} delta p_value {query_name_dict[query_structure]}", p_values_dict, file_pointer=f)
 
-    with open(osp.join(output_path, 'average_metrics.txt'), "w") as f:
+    with open(osp.join(output_path, f'average_metrics_{mode}.txt'), "w") as f:
         for metric in average_metrics:
             average_metrics[metric] /= num_query_structures
             all_metrics["_".join(["average", metric])] = average_metrics[metric]
         log_metrics('%s average'%mode, average_metrics, file_pointer=f)
 
-    with open(osp.join(output_path, 'metrics_over_time.pkl'), 'wb') as f:
+    with open(osp.join(output_path, f'metrics_over_time_{mode}.pkl'), 'wb') as f:
         pickle.dump(total_metrics_over_10_steps, f)
 
     return all_metrics
