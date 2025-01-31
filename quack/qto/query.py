@@ -306,17 +306,20 @@ def train(model, args, tasks, device, output_path):
 
         train_bar.close()
         if (epoch + 1) % args.valid_frequency == 0:
-            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid")
-            wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+            for preference in ("positive", "negative"):
+                all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", preference)
+                wandb.log({f"valid_{preference}_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
 
-    all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test")
-    wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+    for preference in ("positive", "negative"):
+        all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test", preference)
+        wandb.log({f"test_{preference}_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+
     # Save model after training
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
 @torch.inference_mode()
-def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode):
+def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode, preference):
     '''
     Evaluate queries in dataloader
     '''
@@ -327,7 +330,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     session_count = 0
 
     total_metrics_over_10_steps = defaultdict(list)
-    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode}", mininterval=1):
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} {preference}", mininterval=1):
         sessions = sessions[0]
         if len(sessions) == 0:
             raise ValueError("No sessions found for query")
@@ -344,7 +347,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
             positives, negatives = session
 
-            if args.preference == "positive":
+            if preference == "positive":
                 session_feedback = positives[:10]
                 label = 1
             else:
@@ -411,7 +414,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     
     num_query_structures = 0
     num_queries = 0
-    with open(osp.join(output_path, f'all_metrics_{mode}.txt'), "w") as f:
+    with open(osp.join(output_path, f'all_metrics_{mode}_{preference}.txt'), "w") as f:
         for query_structure in metrics:
             log_metrics(mode + " " + query_name_dict[query_structure],
                         metrics[query_structure],
@@ -423,7 +426,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             num_queries += metrics[query_structure]['num_queries']
             num_query_structures += 1
 
-    with open(osp.join(output_path, f"p_values_{mode}.txt"), "w") as f:
+    with open(osp.join(output_path, f"p_values_{mode}_{preference}.txt"), "w") as f:
         for query_structure in reranked_delta:
             p_values_dict = dict()
             for metric, deltas in reranked_delta[query_structure].items():
@@ -431,13 +434,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 p_values_dict[metric] = p_value
             log_metrics(f"{mode} delta p_value {query_name_dict[query_structure]}", p_values_dict, file_pointer=f)
 
-    with open(osp.join(output_path, f'average_metrics_{mode}.txt'), "w") as f:
+    with open(osp.join(output_path, f'average_metrics_{mode}_{preference}.txt'), "w") as f:
         for metric in average_metrics:
             average_metrics[metric] /= num_query_structures
             all_metrics["_".join(["average", metric])] = average_metrics[metric]
         log_metrics('%s average'%mode, average_metrics, file_pointer=f)
 
-    with open(osp.join(output_path, f'metrics_over_time_{mode}.pkl'), 'wb') as f:
+    with open(osp.join(output_path, f'metrics_over_time_{mode}_{preference}.pkl'), 'wb') as f:
         pickle.dump(total_metrics_over_10_steps, f)
 
     return all_metrics
@@ -466,7 +469,7 @@ def load_data(args, tasks, split):
     return queries, hard_answers, easy_answers, sessions
 
 
-def evaluate_split(args, tasks, split, model, query_name_dict, device, output_path):
+def evaluate_split(args, tasks, split, model, query_name_dict, device, output_path, preference):
     queries, hard_answers, easy_answers, sessions = load_data(args, tasks, split)
     queries = flatten_query(queries)
     dataloader = DataLoader(
@@ -480,7 +483,7 @@ def evaluate_split(args, tasks, split, model, query_name_dict, device, output_pa
         num_workers=args.cpu_num,
         collate_fn=TestDataset.collate_fn
     )
-    evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, split)
+    evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, split, preference)
 
 
 def main(args):
@@ -533,10 +536,10 @@ def main(args):
         train(model, args, tasks, device, output_path)
 
     if args.do_valid:
-        evaluate_split(args, tasks, "valid", model, query_name_dict, device, output_path)
+        evaluate_split(args, tasks, "valid", model, query_name_dict, device, output_path, args.preference)
 
     if args.do_test:
-        evaluate_split(args, tasks, "test", model, query_name_dict, device, output_path)
+        evaluate_split(args, tasks, "test", model, query_name_dict, device, output_path, args.preference)
 
 if __name__ == '__main__':
     main(parse_args())
