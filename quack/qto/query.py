@@ -82,6 +82,7 @@ def parse_args(args=None):
 
     parser.add_argument('--data_path', type=str, default=None, help="KG data path")
     parser.add_argument('--kbc_path', type=str, default=None, help="kbc model path")
+    parser.add_argument('--checkpoint', type=str, default=None, help="checkpoint path")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-cpu', '--cpu_num', default=0, type=int, help="used to speed up torch.dataloader")
     
@@ -232,11 +233,14 @@ def train(model, args, tasks, device, output_path):
     for p in model.kbc_model.parameters():
         p.requires_grad = False
 
-    avg_loss_list = []
+    batch_preference_losses = []
+    batch_answer_losses = []
     for epoch in range(1, args.num_epochs + 1):
         train_bar = tqdm(range(len(dataloader)), desc=f"Epoch {epoch}/{args.num_epochs}", mininterval=1)
         iterator = iter(dataloader)
-        for t in range(len(dataloader)):
+        finished = False
+        num_batches = 0
+        while not finished:
             batch_scores = []
             batch_positives = []
             batch_positive_ids = []
@@ -249,6 +253,7 @@ def train(model, args, tasks, device, output_path):
                 try:
                     flat_queries, queries, query_structures, sessions = next(iterator)
                 except StopIteration:
+                    finished = True
                     break
 
                 flat_queries = torch.tensor(flat_queries, device=device)
@@ -284,23 +289,31 @@ def train(model, args, tasks, device, output_path):
             batch_positive_ids = torch.tensor(batch_positive_ids, device=device)
             batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
             # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
-            loss = model.reranking_loss(
+            preference_loss, answer_loss, deltas = model.reranking_loss(
                 batch_preferences,
                 batch_labels,
                 batch_scores,
                 (batch_positives, batch_positive_ids),
                 (batch_negatives, batch_negative_ids),
             )
+            loss = preference_loss + answer_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            avg_loss_list.append(loss.item())
+            batch_preference_losses.append(preference_loss.item())
+            batch_answer_losses.append(answer_loss.item())
+            num_batches += 1
 
-            if t % 100 == 0:
-                wandb.log({"avg_loss": torch.tensor(avg_loss_list).mean().item()})
-                avg_loss_list = []
-
+            if num_batches % 100 == 0:
+                wandb.log({"preference_loss": torch.tensor(batch_preference_losses).mean().item(),
+                           "answer_loss": torch.tensor(batch_answer_losses).mean().item(),
+                           "loss": loss.item(),
+                           "delta_min": deltas.min().item(),
+                           "delta_max": deltas.max().item(),
+                           "delta_mean": deltas.mean().item()})
+                batch_preference_losses = []
+                batch_answer_losses = []
 
         train_bar.close()
         if (epoch + 1) % args.valid_frequency == 0:
@@ -529,6 +542,11 @@ def main(args):
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation)
+
+    if args.checkpoint:
+        print(f"Loading checkpoint {args.checkpoint}")
+        model.load_state_dict(torch.load(args.checkpoint))
+        model.to(device)
 
     pprint(vars(args))
 

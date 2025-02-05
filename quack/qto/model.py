@@ -125,7 +125,10 @@ class KGReasoning(nn.Module):
                 fc2 = nn.Linear(embedding_dim + 1 + embedding_dim + 1, embedding_dim)  # Input: [preference_embedding, preference_label, entity_embedding, score]
             else:
                 raise ValueError(f"Invalid preference embedding type {preference_embedding}")
-            self.adjust_net = nn.Sequential(fc2, activation_class(), nn.Linear(embedding_dim, 1))
+            self.adjust_net = nn.Sequential(fc2,
+                                            activation_class(),
+                                            nn.Linear(embedding_dim, 1),
+                                            nn.Tanh())
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -320,14 +323,17 @@ class KGReasoning(nn.Module):
 
         return m
 
-    def adjust_scores(self, pref_embeddings, candidates, scores):
+    def adjust_scores(self, pref_embeddings, candidates, scores, return_deltas=False):
         inputs = torch.cat([pref_embeddings, candidates, scores.unsqueeze(-1)], dim=1)
         # (p * batch_size, 2 * embedding_dim)
         score_deltas = self.adjust_net(inputs).squeeze(-1)
         # (p * batch_size, 1)
         new_scores = scores + score_deltas
         # (p * batch_size)
-        return new_scores
+        if return_deltas:
+            return new_scores, score_deltas
+        else:
+            return new_scores
 
     @staticmethod
     def _ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id):
@@ -365,14 +371,16 @@ class KGReasoning(nn.Module):
         positives, pos_batch_id = positives
         negatives, neg_batch_id = negatives
 
-        pos_scores = self.adjust_scores(pref_embeddings=m[pos_batch_id],
-                                        candidates=self.kbc_model.embeddings[0](positives),
-                                        scores=scores[pos_batch_id, positives])
+        pos_scores, pos_deltas = self.adjust_scores(pref_embeddings=m[pos_batch_id],
+                                                    candidates=self.kbc_model.embeddings[0](positives),
+                                                    scores=scores[pos_batch_id, positives],
+                                                    return_deltas=True)
         # (p * batch_size)
 
-        neg_scores = self.adjust_scores(pref_embeddings=m[neg_batch_id],
-                                        candidates=self.kbc_model.embeddings[0](negatives),
-                                        scores=scores[neg_batch_id, negatives])
+        neg_scores, neg_deltas = self.adjust_scores(pref_embeddings=m[neg_batch_id],
+                                                    candidates=self.kbc_model.embeddings[0](negatives),
+                                                    scores=scores[neg_batch_id, negatives],
+                                                    return_deltas=True)
         # (n * batch_size)
 
         preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
@@ -390,9 +398,10 @@ class KGReasoning(nn.Module):
         random_indices = torch.multinomial(sampling_probabilities, num_random_examples, replacement=True)
         random_indices = random_indices.view(-1)
 
-        random_new_scores = self.adjust_scores(pref_embeddings=m[random_batch_id],
-                                               candidates=self.kbc_model.embeddings[0](random_indices),
-                                               scores=scores[random_batch_id, random_indices])
+        random_new_scores, random_deltas = self.adjust_scores(pref_embeddings=m[random_batch_id],
+                                                              candidates=self.kbc_model.embeddings[0](random_indices),
+                                                              scores=scores[random_batch_id, random_indices],
+                                                              return_deltas=True)
         # (batch_size * num_random_examples)
 
         answer_scores = torch.cat([pos_scores, neg_scores])
@@ -401,4 +410,6 @@ class KGReasoning(nn.Module):
         # (p * batch_size + n * batch_size)
         answer_loss = self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id)
 
-        return preference_loss + answer_loss
+        all_deltas = torch.cat([pos_deltas, neg_deltas, random_deltas])
+
+        return preference_loss, answer_loss, all_deltas
