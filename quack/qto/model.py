@@ -128,7 +128,7 @@ class KGReasoning(nn.Module):
             self.adjust_net = nn.Sequential(fc2,
                                             activation_class(),
                                             nn.Linear(embedding_dim, 1),
-                                            nn.Softplus())
+                                            nn.Tanh())
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -156,7 +156,7 @@ class KGReasoning(nn.Module):
             r_argmax = new_argmax * tmp_argmax + (1-new_argmax) * r_argmax
             new_embedding = torch.maximum(new_embedding, fraction_embedding)
         return new_embedding, r_argmax.cpu().numpy()
-    
+
     def intersection(self, embeddings):
         return torch.prod(embeddings, dim=0)
 
@@ -220,7 +220,7 @@ class KGReasoning(nn.Module):
             else:
                 embedding = self.intersection(torch.stack(embedding_list))
             exec_query.append('e')
-        
+
         return embedding, idx, exec_query
 
     def find_ans(self, exec_query, query_structure, anchor):
@@ -233,7 +233,7 @@ class KGReasoning(nn.Module):
 
         elif ans_structure[0] == 'u': # 'u'
             return ['u'], 'u'
-        
+
         elif ans_structure[0] == 'r': # ['r', 'e', 'r']
             cur_ent = anchor
             ans = []
@@ -253,7 +253,7 @@ class KGReasoning(nn.Module):
             e_ans, e_ent = self.backward_ans(ans_structure[0], exec_query[0], r_ent)
             ans = [e_ans, r_ans, anchor]
             return ans, e_ent
-            
+
         else: # [[...], [...], 'e']
             ans = []
             for ele, query_ele in zip(ans_structure[:-1], exec_query[:-1]):
@@ -383,8 +383,7 @@ class KGReasoning(nn.Module):
                                                     return_deltas=True)
         # (n * batch_size)
 
-        #preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
-        preference_loss = (pos_deltas - 1.0).pow(2).mean()
+        preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
 
         # == Part 3: Compute score adjustments for random examples ==
         # Get negative examples
@@ -409,7 +408,7 @@ class KGReasoning(nn.Module):
         # (p * batch_size + n * batch_size)
         answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
         # (p * batch_size + n * batch_size)
-        answer_loss = torch.cat([neg_deltas, random_deltas]).pow(2).mean()
+        answer_loss = self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id)
 
         all_deltas = pos_deltas, neg_deltas, random_deltas
 
