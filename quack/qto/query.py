@@ -100,7 +100,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='ltr',
                         type=str,
-                        choices=['random', 'greedy', 'cosine', 'ltr'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'ltr'],
                         help='reranker method')
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
@@ -378,6 +378,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 # Rerank embedding scores based on preferences
                 preferences = torch.tensor(session_feedback[:t+1], device=device)
                 labels = torch.full(preferences.shape, label, device=device)
+                if args.reranker == "default":
+                    session_scores = scores
                 if args.reranker == "cosine":
                     session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha)
                 elif args.reranker == "random":
