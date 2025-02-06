@@ -128,7 +128,7 @@ class KGReasoning(nn.Module):
             self.adjust_net = nn.Sequential(fc2,
                                             activation_class(),
                                             nn.Linear(embedding_dim, 1),
-                                            nn.Tanh())
+                                            nn.Softplus())
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -383,7 +383,8 @@ class KGReasoning(nn.Module):
                                                     return_deltas=True)
         # (n * batch_size)
 
-        preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
+        #preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
+        preference_loss = (pos_deltas - 1.0).pow(2).mean()
 
         # == Part 3: Compute score adjustments for random examples ==
         # Get negative examples
@@ -408,8 +409,8 @@ class KGReasoning(nn.Module):
         # (p * batch_size + n * batch_size)
         answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
         # (p * batch_size + n * batch_size)
-        answer_loss = self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id)
+        answer_loss = torch.cat([neg_deltas, random_deltas]).pow(2).mean()
 
-        all_deltas = torch.cat([pos_deltas, neg_deltas, random_deltas])
+        all_deltas = pos_deltas, neg_deltas, random_deltas
 
         return preference_loss, answer_loss, all_deltas

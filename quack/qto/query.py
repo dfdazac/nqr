@@ -203,9 +203,12 @@ def train(model, args, tasks, device, output_path):
     test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
 
     if args.test_run:
-        train_dataset = torch.utils.data.Subset(train_dataset, range(10))
-        valid_dataset = torch.utils.data.Subset(valid_dataset, range(10))
-        test_dataset = torch.utils.data.Subset(test_dataset, range(10))
+        train_dataset = torch.utils.data.Subset(valid_dataset, range(100))
+
+        valid_dataset = train_dataset
+
+        test_dataset = valid_dataset
+        test_hard_answers, test_easy_answers = valid_hard_answers, valid_easy_answers
 
     dataloader = DataLoader(
         train_dataset,
@@ -306,12 +309,16 @@ def train(model, args, tasks, device, output_path):
             num_batches += 1
 
             if num_batches % 100 == 0:
+                delta_dict = {}
+                for delta_type, delta in zip(("pos", "neg", "random"), deltas):
+                    delta_dict[f"{delta_type}_delta_min"] = delta.min().item()
+                    delta_dict[f"{delta_type}_delta_max"] = delta.max().item()
+                    delta_dict[f"{delta_type}_delta_mean"] = delta.mean().item()
+
                 wandb.log({"preference_loss": torch.tensor(batch_preference_losses).mean().item(),
                            "answer_loss": torch.tensor(batch_answer_losses).mean().item(),
                            "loss": loss.item(),
-                           "delta_min": deltas.min().item(),
-                           "delta_max": deltas.max().item(),
-                           "delta_mean": deltas.mean().item()})
+                           **delta_dict})
                 batch_preference_losses = []
                 batch_answer_losses = []
 
