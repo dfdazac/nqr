@@ -73,6 +73,7 @@ def parse_args(args=None):
     parser.add_argument('--do_cp', action='store_true', help="do cardinality prediction")
     parser.add_argument('--path', action='store_true', help="do interpretation study")
     parser.add_argument('--wandb', action='store_true', help="log to wandb")
+    parser.add_argument('--notes', default=None, type=str, help="notes for wandb")
     parser.add_argument('--test_run', action='store_true', help="run on a small dataset")
 
     parser.add_argument('--num_epochs', default=1000, type=int, help='number of training epochs')
@@ -188,7 +189,7 @@ def train(model, args, tasks, device, output_path):
     '''
     Train model on dataloader
     '''
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args))
+    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args), notes=args.notes)
 
     queries, answers, _, sessions = load_data(args, tasks, "train")
     queries = flatten_query(queries)
