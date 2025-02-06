@@ -408,7 +408,7 @@ class KGReasoning(nn.Module):
         # (p * batch_size + n * batch_size)
         answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
         # (p * batch_size + n * batch_size)
-        answer_loss = 0 # self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id)
+        answer_loss = torch.tensor([0.0], device=device) # self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id)
 
         all_deltas = pos_deltas, neg_deltas, random_deltas
 
