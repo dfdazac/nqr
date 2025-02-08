@@ -336,15 +336,34 @@ class KGReasoning(nn.Module):
             return new_scores
 
     @staticmethod
-    def _ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id):
+    def _ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size):
         pairwise_diff = pos_scores.unsqueeze(1) - neg_scores.unsqueeze(0)
         # (p * batch_size, n * batch_size)
         batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
         # (p * batch_size, n * batch_size)
 
         # RankNet loss: BCE applied to sigmoid of pairwise differences
-        loss = -F.logsigmoid(pairwise_diff)
-        loss = (loss * batch_mask).sum() / batch_mask.sum()
+        loss = -F.logsigmoid(pairwise_diff) * batch_mask
+        # (p * batch_size, n * batch_size)
+
+        # Sum over negatives
+        loss = torch.sum(loss, dim=1)
+        # (p * batch_size,)
+
+        # Sum over positives for each element in batch
+        batch_loss = torch.scatter_add(input=torch.zeros(batch_size, device=pos_scores.device),
+                                       dim=0,
+                                       index=pos_batch_id,
+                                       src=loss)
+
+        # Average per element in batch
+        pairs_per_batch = torch.scatter_add(input=torch.zeros(batch_size, device=pos_scores.device),
+                                            dim=0,
+                                            index=pos_batch_id,
+                                            src=batch_mask.float().sum(dim=1))
+        batch_loss = batch_loss / pairs_per_batch
+
+        loss = batch_loss.mean()
         return loss
 
     def reranking_loss(self, preferences, labels, scores, positives, negatives):
@@ -383,7 +402,7 @@ class KGReasoning(nn.Module):
                                                     return_deltas=True)
         # (n * batch_size)
 
-        preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id)
+        preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size)
 
         # == Part 3: Compute score adjustments for random examples ==
         # Get negative examples
