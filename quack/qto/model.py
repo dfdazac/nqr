@@ -129,6 +129,7 @@ class KGReasoning(nn.Module):
                                             activation_class(),
                                             nn.Linear(embedding_dim, 1),
                                             nn.Tanh())
+            self.alpha = nn.Parameter(torch.tensor([0.5]))
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -324,11 +325,10 @@ class KGReasoning(nn.Module):
         return m
 
     def adjust_scores(self, pref_embeddings, candidates, scores, return_deltas=False):
-        inputs = torch.cat([pref_embeddings, candidates, scores.unsqueeze(-1)], dim=1)
-        # (p * batch_size, 2 * embedding_dim)
-        score_deltas = self.adjust_net(inputs).squeeze(-1)
+        score_deltas = self.kbc_model.compute_similarities_from_tensors(pref_embeddings, candidates).squeeze(-1)
         # (p * batch_size, 1)
-        new_scores = scores + score_deltas
+        alpha = torch.sigmoid(self.alpha)
+        new_scores = scores * alpha + score_deltas * (1 - alpha)
         # (p * batch_size)
         if return_deltas:
             return new_scores, score_deltas
@@ -385,6 +385,7 @@ class KGReasoning(nn.Module):
 
         # == Part 1: Embed preferences ==
         m = self.embed_preferences(preferences, labels)
+        # (batch_size, embedding_dim)
 
         # == Part 2: Compute score adjustments for positive and negatives ==
         positives, pos_batch_id = positives

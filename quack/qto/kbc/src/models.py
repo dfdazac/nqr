@@ -480,6 +480,19 @@ class ComplEx(KBCModel):
                 torch.sqrt(rel[0] ** 2 + rel[1] ** 2),
                 torch.sqrt(rhs[0] ** 2 + rhs[1] ** 2))
 
+    def compute_similarities_from_tensors(self, a, b):
+        """Compute row-wise cosine similarities between two tensors of the same shape."""
+        a_re, a_im = torch.chunk(a, 2, dim=1)
+        b_re, b_im = torch.chunk(b, 2, dim=1)
+        a = a_re + 1j * a_im
+        b = b_re + 1j * b_im
+
+        dot_product = torch.sum(a * b.conj(), dim=1, keepdim=True)
+        a_norm = torch.norm(a, dim=1, p=2, keepdim=True)
+        b_norm = torch.norm(b, dim=1, p=2, keepdim=True)
+        similarity = torch.abs(dot_product / (a_norm * b_norm))
+        return similarity
+
     def compute_similarities(self, queries: torch.Tensor) -> torch.Tensor:
         """Compute similarities based on *complex* cosine similarity"""
         # Separate real and imaginary parts
