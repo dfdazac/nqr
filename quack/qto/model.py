@@ -366,7 +366,45 @@ class KGReasoning(nn.Module):
         loss = batch_loss.mean()
         return loss
 
-    def reranking_loss(self, preferences, labels, scores, positives, negatives):
+    def _get_negative_samples(self, pos_data, neg_data, batch_size, num_negatives=100):
+        positives, pos_batch_id = pos_data
+        negatives, neg_batch_id = neg_data
+        device = pos_batch_id.device
+
+        random_batch_id = torch.repeat_interleave(torch.arange(batch_size, device=device), num_negatives)
+        sampling_probabilities = torch.ones(batch_size, self.nentity, device=device)
+        # Make sure that the sampled entities are not in the answer set
+        sampling_probabilities[pos_batch_id, positives] = 0
+        sampling_probabilities[neg_batch_id, negatives] = 0
+        # Normalize probabilities for each row to sum to 1
+        sampling_probabilities /= sampling_probabilities.sum(dim=1, keepdim=True)
+        random_indices = torch.multinomial(sampling_probabilities, num_negatives, replacement=True)
+        random_indices = random_indices.view(-1)
+
+        return random_indices, random_batch_id
+
+    @staticmethod
+    def _collect_batched_scores(scores, batch_ids, batch_size):
+        device = scores.device
+        batch_ids_range = torch.arange(len(batch_ids), device=device)
+        batch_one_hot = torch.zeros((len(batch_ids), batch_size), dtype=torch.int64, device=device)
+        batch_one_hot[batch_ids_range, batch_ids] = 1
+        sequence_nums = batch_one_hot.cumsum(0) * batch_one_hot
+        sequence_nums = (sequence_nums - 1).clamp(min=0)
+        sequence_nums = sequence_nums[batch_ids_range, batch_ids]
+
+        # Get maximum number of entities per batch
+        max_entities = sequence_nums.max() + 1
+
+        # Create output matrix filled with -1
+        batched_scores = torch.full((batch_size, max_entities), -1e-9, device=device)
+
+        # Fill the matrix with scores
+        batched_scores[batch_ids, sequence_nums] = scores
+
+        return batched_scores
+
+    def reranking_loss(self, preferences, labels, scores, pos_data, neg_data):
         """
         Computes the margin-based loss for reranking.
 
@@ -387,47 +425,48 @@ class KGReasoning(nn.Module):
         m = self.embed_preferences(preferences, labels)
 
         # == Part 2: Compute score adjustments for positive and negatives ==
-        positives, pos_batch_id = positives
-        negatives, neg_batch_id = negatives
+        positives, pos_batch_id = pos_data
+        negatives, neg_batch_id = neg_data
 
-        pos_scores, pos_deltas = self.adjust_scores(pref_embeddings=m[pos_batch_id],
+        pos_scores = scores[pos_batch_id, positives]
+        new_pos_scores, pos_deltas = self.adjust_scores(pref_embeddings=m[pos_batch_id],
                                                     candidates=self.kbc_model.embeddings[0](positives),
-                                                    scores=scores[pos_batch_id, positives],
+                                                    scores=pos_scores,
                                                     return_deltas=True)
         # (p * batch_size)
 
-        neg_scores, neg_deltas = self.adjust_scores(pref_embeddings=m[neg_batch_id],
+        neg_scores = scores[neg_batch_id, negatives]
+        new_neg_scores, neg_deltas = self.adjust_scores(pref_embeddings=m[neg_batch_id],
                                                     candidates=self.kbc_model.embeddings[0](negatives),
-                                                    scores=scores[neg_batch_id, negatives],
+                                                    scores=neg_scores,
                                                     return_deltas=True)
         # (n * batch_size)
 
-        preference_loss = self._ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size)
+        # Preference loss: rank positives higher than negatives
+        preference_loss = self._ranknet_loss(new_pos_scores, new_neg_scores, pos_batch_id, neg_batch_id, batch_size)
 
         # == Part 3: Compute score adjustments for random examples ==
         # Get negative examples
-        num_random_examples = 100
-        random_batch_id = torch.repeat_interleave(torch.arange(batch_size, device=device), num_random_examples)
-        sampling_probabilities = torch.ones(batch_size, self.nentity, device=device)
-        # Make sure that the sampled entities are not in the answer set
-        sampling_probabilities[pos_batch_id, positives] = 0
-        sampling_probabilities[neg_batch_id, negatives] = 0
-        # Normalize probabilities for each row to sum to 1
-        sampling_probabilities /= sampling_probabilities.sum(dim=1, keepdim=True)
-        random_indices = torch.multinomial(sampling_probabilities, num_random_examples, replacement=True)
-        random_indices = random_indices.view(-1)
-
-        random_new_scores, random_deltas = self.adjust_scores(pref_embeddings=m[random_batch_id],
+        random_indices, random_batch_id = self._get_negative_samples(pos_data, neg_data, batch_size)
+        random_scores = scores[random_batch_id, random_indices]
+        new_random_scores, random_deltas = self.adjust_scores(pref_embeddings=m[random_batch_id],
                                                               candidates=self.kbc_model.embeddings[0](random_indices),
-                                                              scores=scores[random_batch_id, random_indices],
+                                                              scores=random_scores,
                                                               return_deltas=True)
         # (batch_size * num_random_examples)
 
-        answer_scores = torch.cat([pos_scores, neg_scores])
-        # (p * batch_size + n * batch_size)
-        answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
-        # (p * batch_size + n * batch_size)
-        answer_loss = self._ranknet_loss(answer_scores, random_new_scores, answer_batch_id, random_batch_id, batch_size)
+        # Answer loss: preserve global rankings by minimizing KL divergence
+        prev_scores = self._collect_batched_scores(scores=torch.cat([pos_scores, neg_scores, random_scores]),
+                                                   batch_ids=torch.cat([pos_batch_id, neg_batch_id, random_batch_id]),
+                                                   batch_size=batch_size)
+        new_scores = self._collect_batched_scores(scores=torch.cat([new_pos_scores, new_neg_scores, new_random_scores]),
+                                                  batch_ids=torch.cat([pos_batch_id, neg_batch_id, random_batch_id]),
+                                                  batch_size=batch_size)
+        # (batch_size, max_entities), padded with -inf
+        answer_loss = F.kl_div(input=torch.log_softmax(new_scores, dim=-1),
+                               target=torch.log_softmax(prev_scores, dim=-1),
+                               reduction='batchmean',
+                               log_target=True)
 
         all_deltas = pos_deltas, neg_deltas, random_deltas
 
