@@ -107,7 +107,7 @@ def parse_args(args=None):
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
-
+    parser.add_argument("--margin", default=0.1, type=float, help="margin for the ltr reranker")
     return parser.parse_args(args)
 
 
@@ -319,7 +319,8 @@ def train(model, args, tasks, device, output_path):
                 wandb.log({"preference_loss": torch.tensor(batch_preference_losses).mean().item(),
                            "answer_loss": torch.tensor(batch_answer_losses).mean().item(),
                            "loss": loss.item(),
-                           **delta_dict})
+                           **delta_dict,
+                           "alpha": model.alpha.item()})
                 batch_preference_losses = []
                 batch_answer_losses = []
 
@@ -551,7 +552,7 @@ def main(args):
     args.nrelation = num_relations
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
-    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation)
+    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation, args.margin)
 
     if args.checkpoint:
         print(f"Loading checkpoint {args.checkpoint}")
