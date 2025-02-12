@@ -56,7 +56,7 @@ def neural_adj_matrix(model, rel, nentity, device, thrshd, adj_list):
     return relation_embedding
 
 class KGReasoning(nn.Module):
-    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, preference_embedding="mean", num_layers=2, activation="relu"):
+    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, preference_embedding="mean", num_layers=2, activation="relu", margin=0.1):
         super(KGReasoning, self).__init__()
         self.nentity = args.nentity
         self.nrelation = args.nrelation
@@ -104,6 +104,7 @@ class KGReasoning(nn.Module):
 
         self.preference_embedding = preference_embedding
         self.num_layers = num_layers
+        self.margin = margin
         if preference_embedding != "none":
             if activation == "relu":
                 activation_class = nn.ReLU
@@ -335,15 +336,14 @@ class KGReasoning(nn.Module):
         else:
             return new_scores
 
-    @staticmethod
-    def _ranknet_loss(pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size):
-        pairwise_diff = pos_scores.unsqueeze(1) - neg_scores.unsqueeze(0)
+    def _ranknet_loss(self, pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size):
+        pairwise_diff = neg_scores.unsqueeze(0) - pos_scores.unsqueeze(1)
         # (p * batch_size, n * batch_size)
         batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
         # (p * batch_size, n * batch_size)
 
         # RankNet loss: BCE applied to sigmoid of pairwise differences
-        loss = -F.logsigmoid(pairwise_diff) * batch_mask
+        loss = torch.clamp(self.margin + pairwise_diff, min=0) * batch_mask
         # (p * batch_size, n * batch_size)
 
         # Sum over negatives
