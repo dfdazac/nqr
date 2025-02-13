@@ -108,6 +108,7 @@ def parse_args(args=None):
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
     parser.add_argument("--margin", default=0.1, type=float, help="margin for the ltr reranker")
+    parser.add_argument("--kl_weight", default=1.0, type=float, help="kl divergence weight")
     return parser.parse_args(args)
 
 
@@ -300,7 +301,7 @@ def train(model, args, tasks, device, output_path):
                 (batch_positives, batch_positive_ids),
                 (batch_negatives, batch_negative_ids),
             )
-            loss = preference_loss + answer_loss
+            loss = preference_loss + args.kl_weight * answer_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
