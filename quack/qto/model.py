@@ -130,7 +130,6 @@ class KGReasoning(nn.Module):
                                             activation_class(),
                                             nn.Linear(embedding_dim, 1),
                                             nn.Tanh())
-            self.alpha = nn.Parameter(torch.tensor([0.5]))
 
     def relation_projection(self, embedding, r_embedding, is_neg=False):
         dim = self.nentity // self.fraction
@@ -328,8 +327,7 @@ class KGReasoning(nn.Module):
     def adjust_scores(self, pref_embeddings, candidates, scores, return_deltas=False):
         score_deltas = self.kbc_model.compute_similarities_from_tensors(pref_embeddings, candidates).squeeze(-1)
         # (p * batch_size, 1)
-        alpha = torch.sigmoid(self.alpha)
-        new_scores = scores * alpha + score_deltas * (1 - alpha)
+        new_scores = scores + score_deltas
         # (p * batch_size)
         if return_deltas:
             return new_scores, score_deltas
