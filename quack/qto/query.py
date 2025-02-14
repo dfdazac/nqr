@@ -319,8 +319,7 @@ def train(model, args, tasks, device, output_path):
                 wandb.log({"preference_loss": torch.tensor(batch_preference_losses).mean().item(),
                            "answer_loss": torch.tensor(batch_answer_losses).mean().item(),
                            "loss": loss.item(),
-                           **delta_dict,
-                           "alpha": model.alpha.item()})
+                           **delta_dict})
                 batch_preference_losses = []
                 batch_answer_losses = []
 
