@@ -190,8 +190,6 @@ def train(model, args, tasks, device, output_path):
     '''
     Train model on dataloader
     '''
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args), notes=args.notes)
-
     queries, answers, _, sessions = load_data(args, tasks, "train")
     queries = flatten_query(queries)
     train_dataset = TestDataset(queries, sessions, args.nentity, args.nrelation)
@@ -560,6 +558,8 @@ def main(args):
         model.to(device)
 
     pprint(vars(args))
+
+    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args), notes=args.notes)
 
     if args.do_train:
         train(model, args, tasks, device, output_path)
