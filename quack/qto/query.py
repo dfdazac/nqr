@@ -158,6 +158,7 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
     masks_easy = indices < num_easy
     answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
     cur_ranking = cur_ranking - answer_list + 1  # filtered setting
+    ranking_list = cur_ranking.int().tolist()
     cur_ranking_hard = cur_ranking[masks_hard]  # take indices that belong to the hard answers
     cur_ranking_easy = cur_ranking[masks_easy]  # take indices that belong to the easy answers
 
@@ -183,7 +184,7 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
             'hits@3_easy': h3_easy,
             'hits@10_easy': h10_easy,
             'num_easy_answer': num_easy,
-        }
+        }, ranking_list
 
 
 def train(model, args, tasks, device, output_path):
@@ -350,6 +351,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     evaluate_preferences = args.preference != "none"
 
     total_metrics_over_10_steps = defaultdict(list)
+    query_to_ranking = dict()
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} {preference}", mininterval=1):
         sessions = sessions[0]
         if evaluate_preferences and len(sessions) == 0:
@@ -358,7 +360,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         flat_queries = torch.LongTensor(flat_queries).to(device)
         scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
         scores = scores.squeeze()
-        initial_metrics = compute_metrics(scores, hard_answers, easy_answers, queries)
+        initial_metrics, ranking_list = compute_metrics(scores, hard_answers, easy_answers, queries)
+        query_to_ranking[queries[0]] = ranking_list
 
         query_cumulative_metrics = defaultdict(float)
 
@@ -400,7 +403,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     pairwise_accuracy = (pos_scores > neg_scores).sum().item() / num_pairs
                     cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
 
-                    instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
+                    instant_metrics, _ = compute_metrics(session_scores, hard_answers, easy_answers, queries)
 
                     for metric in instant_metrics:
                         if metric.startswith('num'):
@@ -435,6 +438,9 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 continue
             metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]])/len(results[query_structure])
         metrics[query_structure]['num_queries'] = len(results[query_structure])
+
+    with open(osp.join(output_path, f"rankings_{mode}.pkl"), "wb") as f:
+        pickle.dump(query_to_ranking, f)
     
     num_query_structures = 0
     num_queries = 0
