@@ -97,7 +97,7 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
-    parser.add_argument("--preference", default="positive", choices=["positive", "negative", "none"], help="preference type")
+    parser.add_argument("--preference", default="none", choices=["positive", "negative", "none"], help="preference type")
     parser.add_argument('--reranker',
                         default='ltr',
                         type=str,
@@ -347,7 +347,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     reranked_delta = defaultdict(lambda: defaultdict(list))
     session_count = 0
 
-    evaluate_preferences = args.preference == "none"
+    evaluate_preferences = args.preference != "none"
 
     total_metrics_over_10_steps = defaultdict(list)
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} {preference}", mininterval=1):
