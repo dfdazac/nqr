@@ -536,7 +536,7 @@ def main(args):
         folder_name += "_valid"
     if args.do_test:
         folder_name += "_test"
-    folder_name += "_positive" if args.preference == "positive" else "_negative"
+    folder_name += f"_{args.preference}"
     # Get unix timestamp for unique folder name
     folder_name += f"_{int(time.time())}"
 
