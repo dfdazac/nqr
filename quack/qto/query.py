@@ -581,5 +581,7 @@ def main(args):
     if args.do_test:
         evaluate_split(args, tasks, "test", model, query_name_dict, device, output_path, args.preference)
 
+    print(f"Done, output path is {output_path}")
+
 if __name__ == '__main__':
     main(parse_args())
