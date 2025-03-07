@@ -28,6 +28,7 @@ query_name_dict = {('e', ('r',)): '1p',
                     ('e', ('r', 'r', 'r', 'r', 'r')): '5p',
                     (('e', ('r',)), ('e', ('r',))): '2i',
                     (('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '3i',
+                    (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '4i',
                     ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
                     (('e', ('r', 'r')), ('e', ('r',))): 'pi',
                     (('e', ('r',)), ('e', ('r', 'n'))): '2in',
@@ -97,7 +98,7 @@ def parse_args(args=None):
     parser.add_argument('--seed', default=12345, type=int, help="random seed")
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
-    parser.add_argument("--preference", default="none", choices=["positive", "negative", "none"], help="preference type")
+    parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"], help="preference type")
     parser.add_argument('--reranker',
                         default='ltr',
                         type=str,
@@ -158,8 +159,8 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
     masks_easy = indices < num_easy
     answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
     cur_ranking = cur_ranking - answer_list + 1  # filtered setting
-    ranking_list = cur_ranking.int().tolist()
     cur_ranking_hard = cur_ranking[masks_hard]  # take indices that belong to the hard answers
+    ranking_list = cur_ranking_hard.int().tolist()
     cur_ranking_easy = cur_ranking[masks_easy]  # take indices that belong to the easy answers
 
     mrr_hard = torch.mean(1. / cur_ranking_hard).item()
@@ -351,7 +352,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     evaluate_preferences = args.preference != "none"
 
     total_metrics_over_10_steps = defaultdict(list)
-    query_to_ranking = dict()
+    query_to_ranking = defaultdict(dict)
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} {preference}", mininterval=1):
         sessions = sessions[0]
         if evaluate_preferences and len(sessions) == 0:
@@ -361,7 +362,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
         scores = scores.squeeze()
         initial_metrics, ranking_list = compute_metrics(scores, hard_answers, easy_answers, queries)
-        query_to_ranking[queries[0]] = ranking_list
+
+        query_to_ranking[query_name_dict[query_structures[0]]][queries[0]] = ranking_list
 
         query_cumulative_metrics = defaultdict(float)
 
@@ -374,17 +376,20 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
                 if preference == "positive":
                     session_feedback = positives[:10]
-                    label = 1
-                else:
+                    session_labels = [1] * len(session_feedback)
+                elif preference == "negative":
                     session_feedback = negatives[:10]
-                    label = 0
+                    session_labels = [0] * len(session_feedback)
+                elif preference == "mixed":
+                    session_feedback = positives[:5] + negatives[:5]
+                    session_labels = [1] * len(positives[:5]) + [0] * len(negatives[:5])
 
                 cumulative_metrics = defaultdict(float)
                 metrics_over_10_steps = defaultdict(list)
                 for t in range(len(session_feedback)):
                     # Rerank embedding scores based on preferences
                     preferences = torch.tensor(session_feedback[:t+1], device=device)
-                    labels = torch.full(preferences.shape, label, device=device)
+                    labels = torch.tensor(session_labels[:t+1], device=device)
                     if args.reranker == "default":
                         session_scores = scores
                     if args.reranker == "cosine":
@@ -439,8 +444,9 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]])/len(results[query_structure])
         metrics[query_structure]['num_queries'] = len(results[query_structure])
 
-    with open(osp.join(output_path, f"rankings_{mode}.pkl"), "wb") as f:
-        pickle.dump(query_to_ranking, f)
+    for structure, rankings_dict  in query_to_ranking.items():
+        with open(osp.join(output_path, f"rankings_{mode}_{structure}.pkl"), "wb") as f:
+            pickle.dump(rankings_dict, f)
     
     num_query_structures = 0
     num_queries = 0
@@ -488,7 +494,11 @@ def load_data(args, tasks, split):
     else:
         hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
         easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
-    sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
+    sessions_path = osp.join(args.data_path, f"{split}-sessions.pkl")
+    if osp.exists(sessions_path):
+        sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
+    else:
+        sessions = dict()
 
     query_structures = list(queries.keys())
     for structure in query_structures:
@@ -523,9 +533,7 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    dataset_name = args.data_path.split('/')[1].split('-')[0]
-    if args.data_path.split('/')[1].split('-')[1] == "237":
-        dataset_name += "-237"
+    dataset_name = args.data_path.split('/')[-1]
 
     folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
     if args.reranker == "cosine":

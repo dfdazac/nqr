@@ -67,9 +67,7 @@ class KGReasoning(nn.Module):
         self.name_answer_dict = name_answer_dict
         self.neg_scale = args.neg_scale
         self.kbc_model = load_kbc(args.kbc_path, device, args.nentity, args.nrelation)
-        dataset_name = args.data_path.split('/')[1].split('-')[0]
-        if args.data_path.split('/')[1].split('-')[1] == "237":
-            dataset_name += "-237"
+        dataset_name = args.data_path.split('/')[-1]
         filename = 'neural_adj/'+dataset_name+'_'+str(args.fraction)+'_'+str(args.thrshd)+'.pt'
         if not os.path.exists('neural_adj'):
             os.makedirs('neural_adj')
