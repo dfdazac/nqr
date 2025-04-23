@@ -94,6 +94,7 @@ def parse_args(args=None):
     parser.add_argument('--fraction', type=int, default=1, help='fraction the entity to save gpu memory usage')
     parser.add_argument('--thrshd', type=float, default=0.001, help='thrshd for neural adjacency matrix')
     parser.add_argument('--neg_scale', type=int, default=1, help='scaling neural adjacency matrix for negation')
+    parser.add_argument('--force_training_edges', action='store_true', help='set scores for edges in training graph to 1')
     
     parser.add_argument('--tasks', default='1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF', type=str, help="tasks connected by dot, refer to the BetaE paper for detailed meaning and structure of each task")
     parser.add_argument('--seed', default=12345, type=int, help="random seed")

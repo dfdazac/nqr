@@ -68,7 +68,8 @@ class KGReasoning(nn.Module):
         self.neg_scale = args.neg_scale
         self.kbc_model = load_kbc(args.kbc_path, device, args.nentity, args.nrelation)
         dataset_name = args.data_path.split('/')[-1]
-        filename = 'neural_adj/'+dataset_name+'_'+str(args.fraction)+'_'+str(args.thrshd)+'.pt'
+        forced_str = '_forced' if args.force_training_edges else '_nonforced'
+        filename = 'neural_adj/'+dataset_name+'_'+str(args.fraction)+'_'+str(args.thrshd)+forced_str+'.pt'
         if not os.path.exists('neural_adj'):
             os.makedirs('neural_adj')
         if os.path.exists(filename):
@@ -81,8 +82,9 @@ class KGReasoning(nn.Module):
             for i in tqdm(range(args.nrelation), desc="Building neural adjacency matrix"):
                 relation_embedding = neural_adj_matrix(self.kbc_model, i, args.nentity, device, args.thrshd, adj_list[i])
                 relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
-                for (h, t) in adj_list[i]:
-                    relation_embedding[h, t] = 1.
+                if args.force_training_edges:
+                    for (h, t) in adj_list[i]:
+                        relation_embedding[h, t] = 1.
 
                 # add fractional
                 fractional_relation_embedding = []
