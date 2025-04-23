@@ -76,6 +76,7 @@ def parse_args(args=None):
     parser.add_argument('--wandb', action='store_true', help="log to wandb")
     parser.add_argument('--notes', default=None, type=str, help="notes for wandb")
     parser.add_argument('--test_run', action='store_true', help="run on a small dataset")
+    parser.add_argument('--save_scores', action='store_true', help="save query scores for all entities")
 
     parser.add_argument('--num_epochs', default=1000, type=int, help='number of training epochs')
     parser.add_argument('--valid_frequency', default=5000, type=int, help='validation frequency in training steps')
@@ -160,7 +161,6 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
     answer_list = torch.arange(num_hard + num_easy).to(torch.float).to(device)
     cur_ranking = cur_ranking - answer_list + 1  # filtered setting
     cur_ranking_hard = cur_ranking[masks_hard]  # take indices that belong to the hard answers
-    ranking_list = cur_ranking_hard.int().tolist()
     cur_ranking_easy = cur_ranking[masks_easy]  # take indices that belong to the easy answers
 
     mrr_hard = torch.mean(1. / cur_ranking_hard).item()
@@ -185,8 +185,7 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
             'hits@3_easy': h3_easy,
             'hits@10_easy': h10_easy,
             'num_easy_answer': num_easy,
-        }, ranking_list
-
+        }
 
 def train(model, args, tasks, device, output_path):
     '''
@@ -361,9 +360,10 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         flat_queries = torch.LongTensor(flat_queries).to(device)
         scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
         scores = scores.squeeze()
-        initial_metrics, ranking_list = compute_metrics(scores, hard_answers, easy_answers, queries)
+        initial_metrics = compute_metrics(scores, hard_answers, easy_answers, queries)
 
-        query_to_ranking[query_name_dict[query_structures[0]]][queries[0]] = ranking_list
+        if args.save_scores:
+            query_to_ranking[query_name_dict[query_structures[0]]][queries[0]] = scores.tolist()
 
         query_cumulative_metrics = defaultdict(float)
 
@@ -444,9 +444,10 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]])/len(results[query_structure])
         metrics[query_structure]['num_queries'] = len(results[query_structure])
 
-    for structure, rankings_dict  in query_to_ranking.items():
-        with open(osp.join(output_path, f"rankings_{mode}_{structure}.pkl"), "wb") as f:
-            pickle.dump(rankings_dict, f)
+    if args.save_scores:
+        for structure, rankings_dict  in query_to_ranking.items():
+            with open(osp.join(output_path, f"rankings_{mode}_{structure}.pkl"), "wb") as f:
+                pickle.dump(rankings_dict, f)
     
     num_query_structures = 0
     num_queries = 0

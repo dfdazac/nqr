@@ -21,7 +21,7 @@ from .kbc.src.models import ComplEx
 
 def load_kbc(model_path, device, nentity, nrelation):
     model = ComplEx(sizes=[nentity, nrelation, nentity], rank=1000, init_size=1e-3)
-    state_dict = torch.load(model_path)
+    state_dict = torch.load(model_path, map_location=device)
     model.load_state_dict(state_dict)
     model.to(device)
     return model
