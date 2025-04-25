@@ -543,7 +543,7 @@ def main(args):
 
     folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
     if args.reranker == "cosine":
-        folder_name += f"_{args.alpha}"
+        folder_name += f"_{args.alpha_p}_{args.alpha_n}"
     elif args.reranker == "ltr":
         folder_name += f"_{args.lr}"
     if args.do_valid:
