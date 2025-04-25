@@ -383,7 +383,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     session_feedback = negatives[:10]
                     session_labels = [0] * len(session_feedback)
                 elif preference == "mixed":
-                    session_feedback = positives[:5] + negatives[:5]
+                    session_feedback = [i for pair in zip(positives[:5], negatives[:5]) for i in pair]
                     session_labels = [1] * len(positives[:5]) + [0] * len(negatives[:5])
 
                 cumulative_metrics = defaultdict(float)
