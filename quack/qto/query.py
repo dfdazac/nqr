@@ -409,7 +409,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     pairwise_accuracy = (pos_scores > neg_scores).sum().item() / num_pairs
                     cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
 
-                    instant_metrics, _ = compute_metrics(session_scores, hard_answers, easy_answers, queries)
+                    instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
 
                     for metric in instant_metrics:
                         if metric.startswith('num'):
