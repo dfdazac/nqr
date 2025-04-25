@@ -426,6 +426,9 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     if t < 10 <= len(session_feedback):
                         metrics_over_10_steps['pairwise_accuracy'].append(pairwise_accuracy)
 
+                    if args.reranker == "default":
+                        break
+
                 for metric in cumulative_metrics:
                     query_cumulative_metrics[metric] += cumulative_metrics[metric] / len(session_feedback)
 
