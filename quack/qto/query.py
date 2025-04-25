@@ -353,7 +353,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
     total_metrics_over_10_steps = defaultdict(list)
     query_to_ranking = defaultdict(dict)
-    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} {preference}", mininterval=1):
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} - preference: {preference}", mininterval=1):
         sessions = sessions[0]
         if evaluate_preferences and len(sessions) == 0:
             raise ValueError("No sessions found for query")
