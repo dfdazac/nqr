@@ -102,16 +102,16 @@ def parse_args(args=None):
 
     parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"], help="preference type")
     parser.add_argument('--reranker',
-                        default='ltr',
+                        default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ltr'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'nqr'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
-    parser.add_argument("--margin", default=0.1, type=float, help="margin for the ltr reranker")
+    parser.add_argument("--margin", default=0.1, type=float, help="margin for the nqr reranker")
     parser.add_argument("--kl_weight", default=1.0, type=float, help="kl divergence weight")
     return parser.parse_args(args)
 
@@ -400,8 +400,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":
                         session_scores = model.rerank_greedy(scores, preferences, labels)
-                    elif args.reranker == "ltr":
-                        session_scores = model.rerank_ltr(scores, preferences, labels)
+                    elif args.reranker == "nqr":
+                        session_scores = model.rerank_nqr(scores, preferences, labels)
 
                     # Compute pairwise accuracy after reranking
                     pos_scores = session_scores[positives].unsqueeze(1)
@@ -544,7 +544,7 @@ def main(args):
     folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
     if args.reranker == "cosine":
         folder_name += f"_{args.alpha_p}_{args.alpha_n}"
-    elif args.reranker == "ltr":
+    elif args.reranker == "nqr":
         folder_name += f"_{args.lr}"
     if args.do_valid:
         folder_name += "_valid"

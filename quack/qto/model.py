@@ -287,7 +287,7 @@ class KGReasoning(nn.Module):
 
         return scores
 
-    def rerank_ltr(self, scores, preferences, labels):
+    def rerank_nqr(self, scores, preferences, labels):
         # == Part 1: Embed preferences ==
         m = self.embed_preferences(preferences.unsqueeze(0), labels.unsqueeze(0))
         embeddings = self.kbc_model.embeddings[0].weight
