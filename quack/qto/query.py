@@ -580,7 +580,9 @@ def main(args):
 
     pprint(vars(args))
 
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=vars(args), notes=args.notes)
+    wandb_config = {**vars(args),
+                    "output_path": output_path}
+    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=wandb_config, notes=args.notes)
 
     if args.do_train:
         train(model, args, tasks, device, output_path)
