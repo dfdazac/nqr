@@ -73,6 +73,7 @@ class KGReasoning(nn.Module):
         if not os.path.exists('neural_adj'):
             os.makedirs('neural_adj')
         if os.path.exists(filename):
+            print(f"Loading neural adjacency matrix from {filename}")
             self.relation_embeddings = torch.load(filename, map_location=device)
         else:
             # p = torch.full((args.nentity, args.nentity), 0.001)
