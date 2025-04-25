@@ -106,7 +106,8 @@ def parse_args(args=None):
                         type=str,
                         choices=['default', 'random', 'greedy', 'cosine', 'ltr'],
                         help='reranker method')
-    parser.add_argument('--alpha', default=0.5, type=float, help="Alpha parameter for the cosine similarity reranker")
+    parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
+    parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
@@ -394,7 +395,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     if args.reranker == "default":
                         session_scores = scores
                     if args.reranker == "cosine":
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha)
+                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n)
                     elif args.reranker == "random":
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":

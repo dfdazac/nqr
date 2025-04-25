@@ -277,13 +277,14 @@ class KGReasoning(nn.Module):
         scores[preferences[labels == 0]] = min_score - 1
         return scores
 
-    def rerank_cosine(self, scores, preferences, labels, alpha):
+    def rerank_cosine(self, scores, preferences, labels, alpha_p, alpha_n):
         similarities = self.kbc_model.compute_similarities(preferences)
 
-        similarities[labels == 0] = -similarities[labels == 0]
+        positive_similarities = similarities[labels == 1].sum(dim=0)
+        negative_similarities = -similarities[labels == 0].sum(dim=0)
 
-        similarities = torch.sum(similarities, dim=0)
-        scores = scores * alpha + similarities * (1 - alpha)
+        scores = scores * alpha_p + positive_similarities * (1 - alpha_p) + scores * alpha_n + negative_similarities * (1 - negative_similarities)
+
         return scores
 
     def rerank_ltr(self, scores, preferences, labels):
