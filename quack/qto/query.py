@@ -455,8 +455,10 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         metrics[query_structure]['num_queries'] = len(results[query_structure])
 
     if args.save_scores:
-        for structure, rankings_dict  in query_to_ranking.items():
-            with open(osp.join(output_path, f"rankings_{mode}_{structure}.pkl"), "wb") as f:
+        for structure, rankings_dict in query_to_ranking.items():
+            output_path = osp.join(args.output_path, "query-scores", structure)
+            os.makedirs(output_path)
+            with open(osp.join(output_path, "qto_scores.pkl"), "wb") as f:
                 pickle.dump(rankings_dict, f)
     
     num_query_structures = 0
