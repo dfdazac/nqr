@@ -70,6 +70,7 @@ class KGReasoning(nn.Module):
         dataset_name = args.data_path.split('/')[-1]
         forced_str = '_forced' if args.force_training_edges else '_nonforced'
         filename = 'neural_adj/'+dataset_name+'_'+str(args.fraction)+'_'+str(args.thrshd)+forced_str+'.pt'
+        print(f"Looking for neural adjacency {filename}...")
         if not os.path.exists('neural_adj'):
             os.makedirs('neural_adj')
         if os.path.exists(filename):
@@ -79,7 +80,7 @@ class KGReasoning(nn.Module):
             # p = torch.full((args.nentity, args.nentity), 0.001)
             # relation_embedding = torch.bernoulli(p)
             # relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
-
+            print("Neural adjacency matrix not found.")
             for i in tqdm(range(args.nrelation), desc="Building neural adjacency matrix"):
                 relation_embedding = neural_adj_matrix(self.kbc_model, i, args.nentity, device, args.thrshd, adj_list[i])
                 relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
