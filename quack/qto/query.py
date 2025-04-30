@@ -424,7 +424,10 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         relative_delta = absolute_delta / (1.0 if initial_metrics[metric] == 0 else initial_metrics[metric])
                         cumulative_metrics[f"{metric}_delta"] += relative_delta
                         if t < 10 <= len(session_feedback):
-                            metrics_over_10_steps[metric].append(relative_delta)
+                            if t == 0:
+                                metrics_over_10_steps[metric].append(initial_metrics[metric])
+                            metrics_over_10_steps[metric].append(instant_metrics[metric])
+                            metrics_over_10_steps[f"{metric}_delta"].append(relative_delta)
 
                         if t == len(session_feedback) - 1:
                             reranked_delta[query_structures[0]][metric].append(absolute_delta)
