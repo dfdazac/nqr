@@ -575,10 +575,6 @@ def main(args):
 
     pprint(vars(args))
 
-    wandb_config = {**vars(args),
-                    "output_path": output_path}
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=wandb_config, notes=args.notes)
-
     dataset_name = args.data_path.split('/')[-1]
     folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
     if args.reranker == "cosine":
@@ -589,10 +585,18 @@ def main(args):
         folder_name += "_valid"
     if args.do_test:
         folder_name += "_test"
-    folder_name += f"_{args.preference}_{int(time.time())}_{wandb.run.id}"
+    folder_name += f"_{args.preference}_{int(time.time())}"
+
+    # Initialize wandb early to get run ID
+    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', notes=args.notes)
+    folder_name += f"_{wandb.run.id}"
     output_path = os.path.join('results', folder_name)
     if not os.path.exists(output_path):
         os.makedirs(output_path)
+
+    # Now create wandb_config with valid output_path
+    wandb_config = {**vars(args), "output_path": output_path}
+    wandb.config.update(wandb_config)
 
     if args.do_train:
         train(model, args, tasks, device, output_path)
