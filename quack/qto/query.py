@@ -549,25 +549,6 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    dataset_name = args.data_path.split('/')[-1]
-
-    folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
-    if args.reranker == "cosine":
-        folder_name += f"_{args.alpha_p}_{args.alpha_n}"
-    elif args.reranker == "nqr":
-        folder_name += f"_{args.lr}"
-    if args.do_valid:
-        folder_name += "_valid"
-    if args.do_test:
-        folder_name += "_test"
-    folder_name += f"_{args.preference}"
-    # Get unix timestamp for unique folder name
-    folder_name += f"_{int(time.time())}"
-
-    output_path = os.path.join('results', folder_name)
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-
     with open('%s/stats.txt'%args.data_path) as f:
         stats = f.readlines()
         num_entities = int(stats[0].split(' ')[-1])
@@ -597,6 +578,21 @@ def main(args):
     wandb_config = {**vars(args),
                     "output_path": output_path}
     wandb.init(project="quack", mode='online' if args.wandb else 'disabled', config=wandb_config, notes=args.notes)
+
+    dataset_name = args.data_path.split('/')[-1]
+    folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
+    if args.reranker == "cosine":
+        folder_name += f"_{args.alpha_p}_{args.alpha_n}"
+    elif args.reranker == "nqr":
+        folder_name += f"_{args.lr}"
+    if args.do_valid:
+        folder_name += "_valid"
+    if args.do_test:
+        folder_name += "_test"
+    folder_name += f"_{args.preference}_{int(time.time())}_{wandb.run.id}"
+    output_path = os.path.join('results', folder_name)
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
     if args.do_train:
         train(model, args, tasks, device, output_path)
