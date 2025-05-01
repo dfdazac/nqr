@@ -61,9 +61,11 @@ def plot_metrics_comparison(file_paths, method_names):
 
 plot_metrics_comparison([
     "results/fb15k237-betae_10_0.0002_greedy_test_mixed_1745998797/metrics_over_time_test_mixed.pkl",
-    "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746011235/metrics_over_time_test_mixed.pkl"
+    "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746011235/metrics_over_time_test_mixed.pkl",
+    "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746020972/metrics_over_time_test_mixed.pkl"
 ],
     [
         "Greedy",
-        "Cosine"
+        "Cosine",
+        "NQR"
 ])
