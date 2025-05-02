@@ -273,14 +273,13 @@ def train(model, args, tasks, device, output_path):
                 batch_negatives.extend(negatives)
                 batch_negative_ids.extend([i] * len(negatives))
 
-                # Pick a random preference (positive or negative) and cap it at num_preferences
-                label = random.randint(0, 1)
-                preferences = positives if label == 1 else negatives
-                preferences = random.sample(preferences, min(num_preferences, len(preferences)))
-                preferences = torch.tensor(preferences, device=device)
+                # Pick a random mix of positive and negative feedback and cap it at num_preferences
+                combined = [(item, 1) for item in positives] + [(item, 0) for item in negatives]
+                sampled = random.sample(combined, min(num_preferences, len(combined)))
+                preferences, labels = zip(*sampled)
 
-                batch_preferences.append(preferences)
-                batch_labels.append(torch.full(preferences.shape, label, device=device))
+                batch_preferences.append(torch.tensor(preferences, device=device))
+                batch_labels.append(torch.tensor(labels, device=device))
 
             if len(batch_scores) == 0:
                 break
