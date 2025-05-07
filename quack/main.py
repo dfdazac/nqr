@@ -25,7 +25,7 @@ class Arguments(Tap):
     command: COMMANDS
 
     data_path: str
-    embedding_model: str = "dunzhang/stella_en_400M_v5"
+    embedding_model: str = "NovaSearch/stella_en_400M_v5"
 
     tasks = "1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF"
 
@@ -117,7 +117,7 @@ def embed(args: Arguments):
 def generate(args: Arguments):
     # Load entity embeddings
     embeddings_filename = get_embeddings_filename(args.embedding_model)
-    emb_data = torch.load(osp.join(args.data_path, embeddings_filename))
+    emb_data = torch.load(osp.join(args.data_path, embeddings_filename), weights_only=False)
     embeddings = emb_data["embeddings"]
     descriptions = emb_data["descriptions"]
     entity_to_row = emb_data["entity_to_row"]
