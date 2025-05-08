@@ -83,7 +83,9 @@ class KGReasoning(nn.Module):
             print("Neural adjacency matrix not found.")
             for i in tqdm(range(args.nrelation), desc="Building neural adjacency matrix"):
                 relation_embedding = neural_adj_matrix(self.kbc_model, i, args.nentity, device, args.thrshd, adj_list[i])
-                relation_embedding = (relation_embedding>=1).to(torch.float) * 0.9999 + (relation_embedding<1).to(torch.float) * relation_embedding
+
+                relation_embedding[torch.nonzero(relation_embedding >= 1, as_tuple=True)] = 0.9999
+
                 if args.force_training_edges:
                     for (h, t) in adj_list[i]:
                         relation_embedding[h, t] = 1.
