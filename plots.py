@@ -76,3 +76,10 @@ plot_metrics_comparison(OrderedDict([
     ]),
     output_filename="fb15k237_over_time.pdf"
 )
+
+plot_metrics_comparison(OrderedDict([
+    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746798909_v3m7gqu4/metrics_over_time_test_mixed.pkl"),
+    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746799431_5jw6w7yi/metrics_over_time_test_mixed.pkl"),
+    ]),
+    output_filename="hetionet_over_time.pdf"
+)
