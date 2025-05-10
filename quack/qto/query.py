@@ -206,7 +206,7 @@ def train(model, args, tasks, device, output_path):
     test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
 
     if args.test_run:
-        train_dataset = torch.utils.data.Subset(valid_dataset, range(100))
+        train_dataset = torch.utils.data.Subset(valid_dataset, range(10))
 
         valid_dataset = train_dataset
 
@@ -327,10 +327,10 @@ def train(model, args, tasks, device, output_path):
         train_bar.close()
         if (epoch + 1) % args.valid_frequency == 0:
             all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", preference="mixed")
-            wandb.log({f"valid_{preference}_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+            wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
 
     all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test", preference="mixed")
-    wandb.log({f"test_{preference}_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+    wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
