@@ -5,6 +5,7 @@ from typing import Literal
 import numpy as np
 import torch
 from datasets import load_dataset
+import random
 from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
@@ -36,6 +37,14 @@ class Arguments(Tap):
     max_num_sessions: int = 5
     """Maximum number of sessions (partitions of the answer set) to generate
     for each query"""
+
+    subsample_train: bool = False
+    subsample_valid: bool = False
+    subsample_test: bool = False
+    subsampling_ratio: float = None
+    """The fraction of generated queries to keep. If not set, all queries are kept."""
+    seed: int = 0
+    """Random seed used when subsampling queries"""
 
     plot: bool = False
 
@@ -142,6 +151,11 @@ def generate(args: Arguments):
                                                id2rel, args.max_num_sessions,
                                                args.plot)
     query_structures = [name_query_dict[query_type] for query_type in args.tasks.split(".")]
+    subsample_map = {
+        "train": args.subsample_train,
+        "valid": args.subsample_valid,
+        "test": args.subsample_test
+    }
     # Cluster answers to queries
     for split in splits:
         split_sessions = dict()
@@ -154,8 +168,7 @@ def generate(args: Arguments):
             all_queries = queries[split][structure]
             structure_name = query_name_dict[structure]
             num_queries += len(all_queries)
-
-            session_lengths = []
+            structure_query_sessions = dict()
 
             print(f"Generating {split} split for {structure_name} queries...")
             for query in tqdm(all_queries, mininterval=1, disable=args.plot):
@@ -177,8 +190,7 @@ def generate(args: Arguments):
                             print(f"{i} Predicate: {id2rel[identifier]}")
 
                 query_sessions = preference_generator.generate(answer_ids, descriptions)
-                split_sessions[query] = query_sessions
-                session_lengths.append(len(query_sessions))
+                structure_query_sessions[query] = query_sessions
 
                 if args.plot and len(query_sessions) > 0:
                     for session in query_sessions:
@@ -188,6 +200,14 @@ def generate(args: Arguments):
                                 print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
 
                     a = input("Press enter to continue")
+
+            if args.subsampling_ratio is not None and subsample_map.get(split, False):
+                    random.seed(args.seed)
+                    num_samples = int(args.subsampling_ratio * len(structure_query_sessions))
+                    subsampled_queries = random.sample(list(structure_query_sessions.keys()), num_samples)
+                    structure_query_sessions = {q: structure_query_sessions[q] for q in subsampled_queries}
+
+            split_sessions.update(structure_query_sessions)
 
         with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "wb") as f:
             pkl.dump(split_sessions, f)
