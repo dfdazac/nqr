@@ -417,6 +417,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                             continue
                         absolute_delta = instant_metrics[metric] - initial_metrics[metric]
                         relative_delta = absolute_delta / (1.0 if initial_metrics[metric] == 0 else initial_metrics[metric])
+                        cumulative_metrics[f"{metric}"] += instant_metrics[metric]
                         cumulative_metrics[f"{metric}_delta"] += relative_delta
                         if t < 10 <= len(session_feedback):
                             if t == 0:
@@ -434,7 +435,11 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         break
 
                 for metric in cumulative_metrics:
-                    query_cumulative_metrics[metric] += cumulative_metrics[metric] / len(session_feedback)
+                    if args.reranker == "default":
+                        session_length = 1
+                    else:
+                        session_length = len(session_feedback)
+                    query_cumulative_metrics[metric] += cumulative_metrics[metric] / session_length
 
                 for metric in metrics_over_10_steps:
                     total_metrics_over_10_steps[metric].append(metrics_over_10_steps[metric])
