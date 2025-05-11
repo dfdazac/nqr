@@ -104,7 +104,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'nqr'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
@@ -300,6 +300,7 @@ def train(model, args, tasks, device, output_path):
                 batch_scores,
                 (batch_positives, batch_positive_ids),
                 (batch_negatives, batch_negative_ids),
+                use_nqr=args.reranker == "nqr"
             )
             loss = preference_loss + args.kl_weight * answer_loss
             optimizer.zero_grad()
@@ -400,7 +401,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":
                         session_scores = model.rerank_greedy(scores, preferences, labels)
-                    elif args.reranker == "nqr":
+                    elif args.reranker in ("ranknet", "nqr"):
                         session_scores = model.rerank_nqr(scores, preferences, labels)
 
                     # Compute pairwise accuracy after reranking

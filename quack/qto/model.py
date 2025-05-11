@@ -341,15 +341,18 @@ class KGReasoning(nn.Module):
         else:
             return new_scores
 
-    def _ranknet_loss(self, pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size):
+    def _ranknet_loss(self, pos_scores, neg_scores, pos_batch_id, neg_batch_id, batch_size, margin_loss=True):
         pairwise_diff = neg_scores.unsqueeze(0) - pos_scores.unsqueeze(1)
         # (p * batch_size, n * batch_size)
         batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
         # (p * batch_size, n * batch_size)
 
         # RankNet loss: BCE applied to sigmoid of pairwise differences
-        loss = torch.clamp(self.margin + pairwise_diff, min=0) * batch_mask
-        # (p * batch_size, n * batch_size)
+        if margin_loss:
+            loss = torch.clamp(self.margin + pairwise_diff, min=0) * batch_mask
+            # (p * batch_size, n * batch_size)
+        else:
+            loss = -F.logsigmoid(pairwise_diff) * batch_mask
 
         # Sum over negatives
         loss = torch.sum(loss, dim=1)
@@ -409,7 +412,7 @@ class KGReasoning(nn.Module):
 
         return batched_scores
 
-    def reranking_loss(self, preferences, labels, scores, pos_data, neg_data):
+    def reranking_loss(self, preferences, labels, scores, pos_data, neg_data, use_nqr=True):
         """
         Computes the margin-based loss for reranking.
 
@@ -448,7 +451,8 @@ class KGReasoning(nn.Module):
         # (n * batch_size)
 
         # Preference loss: rank positives higher than negatives
-        preference_loss = self._ranknet_loss(new_pos_scores, new_neg_scores, pos_batch_id, neg_batch_id, batch_size)
+        preference_loss = self._ranknet_loss(new_pos_scores, new_neg_scores, pos_batch_id, neg_batch_id, batch_size,
+                                             margin_loss=use_nqr)
 
         # == Part 3: Compute score adjustments for random examples ==
         # Get negative examples
@@ -460,18 +464,27 @@ class KGReasoning(nn.Module):
                                                               return_deltas=True)
         # (batch_size * num_random_examples)
 
-        # Answer loss: preserve global rankings by minimizing KL divergence
-        prev_scores = self._collect_batched_scores(scores=torch.cat([pos_scores, neg_scores, random_scores]),
-                                                   batch_ids=torch.cat([pos_batch_id, neg_batch_id, random_batch_id]),
-                                                   batch_size=batch_size)
-        new_scores = self._collect_batched_scores(scores=torch.cat([new_pos_scores, new_neg_scores, new_random_scores]),
-                                                  batch_ids=torch.cat([pos_batch_id, neg_batch_id, random_batch_id]),
-                                                  batch_size=batch_size)
-        # (batch_size, max_entities), padded with -inf
-        answer_loss = F.kl_div(input=torch.log_softmax(new_scores, dim=-1),
-                               target=torch.log_softmax(prev_scores, dim=-1),
-                               reduction='batchmean',
-                               log_target=True)
+        if use_nqr:
+            # Answer loss: preserve global rankings by minimizing KL divergence
+            prev_scores = self._collect_batched_scores(scores=torch.cat([pos_scores, neg_scores, random_scores]),
+                                                       batch_ids=torch.cat([pos_batch_id, neg_batch_id, random_batch_id]),
+                                                       batch_size=batch_size)
+            new_scores = self._collect_batched_scores(scores=torch.cat([new_pos_scores, new_neg_scores, new_random_scores]),
+                                                      batch_ids=torch.cat([pos_batch_id, neg_batch_id, random_batch_id]),
+                                                      batch_size=batch_size)
+            # (batch_size, max_entities), padded with -inf
+            answer_loss = F.kl_div(input=torch.log_softmax(new_scores, dim=-1),
+                                   target=torch.log_softmax(prev_scores, dim=-1),
+                                   reduction='batchmean',
+                                   log_target=True)
+        else:
+            # Normal Ranknet objective
+            answer_scores = torch.cat([new_pos_scores, new_neg_scores])
+            # (p * batch_size + n * batch_size)
+            answer_batch_id = torch.cat([pos_batch_id, neg_batch_id])
+            # (p * batch_size + n * batch_size)
+            answer_loss = self._ranknet_loss(answer_scores, new_random_scores, answer_batch_id, random_batch_id,
+                                             batch_size, margin_loss=False)
 
         all_deltas = pos_deltas, neg_deltas, random_deltas
 
