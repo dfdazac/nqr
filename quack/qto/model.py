@@ -347,12 +347,12 @@ class KGReasoning(nn.Module):
         batch_mask = pos_batch_id.unsqueeze(1) == neg_batch_id.unsqueeze(0)
         # (p * batch_size, n * batch_size)
 
-        # RankNet loss: BCE applied to sigmoid of pairwise differences
         if margin_loss:
             loss = torch.clamp(self.margin + pairwise_diff, min=0) * batch_mask
             # (p * batch_size, n * batch_size)
         else:
-            loss = -F.logsigmoid(pairwise_diff) * batch_mask
+            # RankNet loss: BCE applied to sigmoid of pairwise differences (pos - neg)
+            loss = -F.logsigmoid(-pairwise_diff) * batch_mask
 
         # Sum over negatives
         loss = torch.sum(loss, dim=1)
