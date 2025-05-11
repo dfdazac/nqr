@@ -326,7 +326,7 @@ def train(model, args, tasks, device, output_path):
                 batch_answer_losses = []
 
         train_bar.close()
-        if (epoch + 1) % args.valid_frequency == 0:
+        if epoch % args.valid_frequency == 0:
             all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", preference="mixed")
             wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
 
