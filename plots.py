@@ -70,16 +70,16 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
 
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746017082/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746011235/metrics_over_time_test_mixed.pkl"),
-    ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746261385_dvbsv30h/metrics_over_time_test_mixed.pkl")
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
+    ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
+    ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl")
     ]),
     output_filename="fb15k237_over_time.pdf"
 )
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746798909_v3m7gqu4/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746799431_5jw6w7yi/metrics_over_time_test_mixed.pkl"),
+    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
+    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
     ]),
     output_filename="hetionet_over_time.pdf"
 )
