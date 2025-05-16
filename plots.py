@@ -6,6 +6,7 @@ import pickle as p
 import itertools
 from tqdm import tqdm
 import pandas as pd
+from matplotlib.colors import LogNorm
 
 plt.rc('font', family='Nimbus Sans')
 
@@ -125,26 +126,49 @@ def merge_test_and_sweep_data(test_runs_path, sweep_runs_path, output_path):
 #                           "results/wandb_export_hetionet_sweep_runs.csv",
 #                           "results/hetionet_final_performance_with_kl.csv")
 
-def plot_performance_with_kl(merged_data_path):
-    dataframe = pd.read_csv(merged_data_path)
-    plt.figure(figsize=(5, 4))
 
-    # Create a colormap to represent KL weight
-    # cmap = plt.cm.  # A heatmap-like colormap
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
-    # Scatter plot with color indicating KL weight
-    scatter = plt.scatter(dataframe['Accuracy'], dataframe['MRR'],
-                          c=dataframe['kl_weight'], cmap="viridis", s=50, alpha=0.7, marker='o', edgecolors='black')
+def plot_performance_with_kl(merged_data_paths, titles):
+    num_plots = len(merged_data_paths)
+    fig, axes = plt.subplots(1, num_plots, figsize=(5 * num_plots, 3)
+                             )
 
-    # Add a colorbar to indicate KL weight levels
-    cbar = plt.colorbar(scatter)
+    # Handle the case where there's only one plot (axes might not be iterable)
+    if num_plots == 1:
+        axes = [axes]
+
+    # Iterate over each file path and create a subplot
+    for i, path in enumerate(merged_data_paths):
+        dataframe = pd.read_csv(path)
+
+        # Scatter plot with color indicating KL weight
+        scatter = axes[i].scatter(dataframe['Accuracy'], dataframe['MRR'],
+                                  c=dataframe['kl_weight'], cmap='viridis',
+                                  norm=LogNorm(vmin=0.1, vmax=10), s=50,
+                                  alpha=0.7, marker='o', edgecolors='black')
+
+        axes[i].set_title(titles[i])
+        axes[i].set_xlabel("Pairwise Accuracy")
+        axes[i].set_ylabel("MRR")
+        axes[i].grid(True)
+
+    # Add a single colorbar on the right
+    fig.subplots_adjust(right=0.85)
+    cbar_ax = fig.add_axes([0.88, 0.15, 0.03, 0.7])
+    cbar = fig.colorbar(scatter, cax=cbar_ax)
     cbar.set_label("KL Weight")
+    cbar.set_ticks([0.1, 1.0, 10])
+    cbar.set_ticklabels(['0.1', '1.0', '10'])
 
-    plt.xlabel("Pairwise Accuracy")
-    plt.ylabel("MRR")
-    plt.grid(True)
+    # plt.subplots_adjust(bottom=0.2)
+    # plt.savefig("mrr_accuracy_tradeoff.pdf")
     plt.show()
 
 
 # plot_performance_with_kl("results/fb15k237_final_performance_with_kl.csv")
-plot_performance_with_kl("results/hetionet_final_performance_with_kl.csv")
+plot_performance_with_kl(["results/fb15k237_final_performance_with_kl.csv",
+                          "results/hetionet_final_performance_with_kl.csv"],
+                         ["FB15k237", "Hetionet"])
