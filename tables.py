@@ -30,6 +30,7 @@ def process_files(file_dict, metric_name):
 fb15k237_results = OrderedDict([
     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/all_metrics_test_mixed.txt"),
     ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/all_metrics_test_mixed.txt"),
+    ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag/all_metrics_test_mixed.txt"),
     ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/all_metrics_test_mixed.txt")
     ])
 
