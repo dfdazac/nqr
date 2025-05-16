@@ -55,6 +55,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
                     ax.plot(time_steps, metric.mean(axis=0), marker='.', markersize=10, color=color)
                 else:
                     ax.plot(time_steps, metric.mean(axis=0)[1:], marker='.', markersize=10, color=color)
+            print(f"{method_name} - Final value of {title}: {metric.mean(axis=0)[-1]}")
 
         ax.set_ylabel(title)
         ax.set_xlabel('Number of interactions')
@@ -92,7 +93,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
 #     ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
 #     ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
 #     ("RankNet", "results/hetionet_10_0.001_ranknet_test_mixed_1747222015_y13wghbh/metrics_over_time_test_mixed.pkl"),
-#     ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrpmetrics_over_time_test_mixed.pkl")
+#     ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrp/metrics_over_time_test_mixed.pkl")
 #     ]),
 #     output_filename="hetionet_over_time.pdf"
 # )
@@ -131,14 +132,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-def plot_performance_with_kl(merged_data_paths, titles):
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+
+def plot_performance_with_kl(merged_data_paths, titles, highlights=None):
     num_plots = len(merged_data_paths)
-    fig, axes = plt.subplots(1, num_plots, figsize=(5 * num_plots, 3)
-                             )
+    fig, axes = plt.subplots(1, num_plots, figsize=(5 * num_plots, 4))
 
     # Handle the case where there's only one plot (axes might not be iterable)
     if num_plots == 1:
         axes = [axes]
+
+    # Store handles for the legend (use a dictionary to avoid duplicates)
+    legend_handles = {}
 
     # Iterate over each file path and create a subplot
     for i, path in enumerate(merged_data_paths):
@@ -146,14 +153,24 @@ def plot_performance_with_kl(merged_data_paths, titles):
 
         # Scatter plot with color indicating KL weight
         scatter = axes[i].scatter(dataframe['Accuracy'], dataframe['MRR'],
-                                  c=dataframe['kl_weight'], cmap='viridis',
+                                  c=dataframe['kl_weight'], cmap='PuRd',
                                   norm=LogNorm(vmin=0.1, vmax=10), s=50,
                                   alpha=0.7, marker='o', edgecolors='black')
 
         axes[i].set_title(titles[i])
         axes[i].set_xlabel("Pairwise Accuracy")
         axes[i].set_ylabel("MRR")
-        axes[i].grid(True)
+
+        # Plot highlight markers if provided
+        if highlights:
+            for highlight in highlights:
+                x, y = highlight['coords'][i]
+                marker = axes[i].scatter(x, y, color=highlight['color'],
+                                         label=highlight['label'], s=200,
+                                         marker='X', edgecolors='white', linewidths=1.5)
+                # Collect handles in a dictionary to prevent duplicates
+                if highlight['label'] not in legend_handles:
+                    legend_handles[highlight['label']] = marker
 
     # Add a single colorbar on the right
     fig.subplots_adjust(right=0.85)
@@ -163,12 +180,19 @@ def plot_performance_with_kl(merged_data_paths, titles):
     cbar.set_ticks([0.1, 1.0, 10])
     cbar.set_ticklabels(['0.1', '1.0', '10'])
 
-    # plt.subplots_adjust(bottom=0.2)
-    # plt.savefig("mrr_accuracy_tradeoff.pdf")
+    # Add the legend for highlighted markers
+    if legend_handles:
+        fig.legend(handles=legend_handles.values(), loc='lower center', bbox_to_anchor=(0.5, 1.05), ncol=len(legend_handles))
+
     plt.show()
 
-
-# plot_performance_with_kl("results/fb15k237_final_performance_with_kl.csv")
+    
 plot_performance_with_kl(["results/fb15k237_final_performance_with_kl.csv",
                           "results/hetionet_final_performance_with_kl.csv"],
-                         ["FB15k237", "Hetionet"])
+                         ("FB15k237", "Hetionet"),
+                         highlights=[
+                             {"coords": [(0.5467, 0.1406), (0.4980, 0.0870)], "label": "QTO", "color": "C0"},
+                             {"coords": [(0.9005, 0.0301), (0.7661, 0.0061)], "label": "Cosine", "color": "C1"},
+                            {"coords": [(0.7547, 0.0821), (0.7139, 0.0686)], "label": "RankNet", "color": "C2"}
+                         ]
+                         )
