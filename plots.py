@@ -1,8 +1,11 @@
 from collections import OrderedDict
 import matplotlib.pyplot as plt
 import numpy as np
+import os.path as osp
 import pickle as p
 import itertools
+from tqdm import tqdm
+import pandas as pd
 
 plt.rc('font', family='Nimbus Sans')
 
@@ -32,19 +35,25 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
 
     # Create subplots for boxplots
     titles = ['Pairwise Accuracy', 'MRR', 'H@10']
-    x_start = [1, 0, 0]
+    x_start = [1, 1, 1]
     fig, axes = plt.subplots(1, len(titles), figsize=(10, 3.5))  # Increase figure size for better spacing
 
     # Plot metrics
     for ax, title, metric_idx in zip(axes, titles, range(len(titles))):
         num_timesteps = max([metrics_all_methods[i][metric_idx].shape[1] for i in range(num_methods)])
+
+        if title != "Pairwise Accuracy":
+            num_timesteps -= 1
         time_steps = np.arange(x_start[metric_idx], num_timesteps + x_start[metric_idx], 1)
         for method_idx, (metrics, method_name, color) in enumerate(zip(metrics_all_methods, method_names, itertools.cycle(colors))):
             metric = metrics[metric_idx]
             if method_name == "QTO":
                 ax.axhline(metric[:, 0].mean(), color=color, linestyle='--')
             else:
-                ax.plot(time_steps, metric.mean(axis=0), marker='.', markersize=10, color=color)
+                if title == "Pairwise Accuracy":
+                    ax.plot(time_steps, metric.mean(axis=0), marker='.', markersize=10, color=color)
+                else:
+                    ax.plot(time_steps, metric.mean(axis=0)[1:], marker='.', markersize=10, color=color)
 
         ax.set_ylabel(title)
         ax.set_xlabel('Number of interactions')
@@ -69,17 +78,73 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.savefig(output_filename)
 
 
-plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
-    ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl")
-    ]),
-    output_filename="fb15k237_over_time.pdf"
-)
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
+#     ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag/metrics_over_time_test_mixed.pkl"),
+#     ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl")
+#     ]),
+#     output_filename="fb15k237_over_time.pdf"
+# )
 
-plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
-    ]),
-    output_filename="hetionet_over_time.pdf"
-)
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
+#     ("RankNet", "results/hetionet_10_0.001_ranknet_test_mixed_1747222015_y13wghbh/metrics_over_time_test_mixed.pkl"),
+#     ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrpmetrics_over_time_test_mixed.pkl")
+#     ]),
+#     output_filename="hetionet_over_time.pdf"
+# )
+
+def merge_test_and_sweep_data(test_runs_path, sweep_runs_path, output_path):
+    test_runs_data = pd.read_csv(test_runs_path)
+    sweep_runs_data = pd.read_csv(sweep_runs_path)
+    mrr, acc, ids = [], [], []
+    for path, checkpoint in tqdm(zip(test_runs_data["output_path"], test_runs_data["checkpoint"])):
+        model_id = checkpoint.split("/")[-1].split("-")[0]
+        ids.append(model_id)
+        with open(osp.join(path, 'metrics_over_time_test_mixed.pkl'), 'rb') as f:
+            metrics_over_time = p.load(f)
+
+        final_mrr = np.array(metrics_over_time['mrr_hard'])[:,-1].mean()
+        final_acc = np.array(metrics_over_time['pairwise_accuracy'])[:,-1].mean()
+        mrr.append(final_mrr)
+        acc.append(final_acc)
+
+    final_performance_df = pd.DataFrame({"ID": ids, "MRR": mrr, "Accuracy": acc})
+    final_performance_with_kl = pd.merge(final_performance_df, sweep_runs_data, on="ID", how="inner")
+
+    final_performance_with_kl.to_csv(output_path)
+    print(f"Saved {output_path}")
+
+
+# merge_test_and_sweep_data("results/wandb_export_fb15k237_test_runs.csv",
+#                           "results/wandb_export_fb15k237_sweep_runs.csv",
+#                           "results/fb15k237_final_performance_with_kl.csv"))
+# merge_test_and_sweep_data("results/wandb_export_hetionet_test_runs.csv",
+#                           "results/wandb_export_hetionet_sweep_runs.csv",
+#                           "results/hetionet_final_performance_with_kl.csv")
+
+def plot_performance_with_kl(merged_data_path):
+    dataframe = pd.read_csv(merged_data_path)
+    plt.figure(figsize=(5, 4))
+
+    # Create a colormap to represent KL weight
+    # cmap = plt.cm.  # A heatmap-like colormap
+
+    # Scatter plot with color indicating KL weight
+    scatter = plt.scatter(dataframe['Accuracy'], dataframe['MRR'],
+                          c=dataframe['kl_weight'], cmap="viridis", s=50, alpha=0.7, marker='o', edgecolors='black')
+
+    # Add a colorbar to indicate KL weight levels
+    cbar = plt.colorbar(scatter)
+    cbar.set_label("KL Weight")
+
+    plt.xlabel("Pairwise Accuracy")
+    plt.ylabel("MRR")
+    plt.grid(True)
+    plt.show()
+
+
+# plot_performance_with_kl("results/fb15k237_final_performance_with_kl.csv")
+plot_performance_with_kl("results/hetionet_final_performance_with_kl.csv")
