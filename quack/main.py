@@ -223,9 +223,9 @@ def describe(args: Arguments):
         print(f"{label:>10}", end="")
         for d in data:
             if type(d) == str:
-                print(f"{d:>10}", end="")
+                print(f"{d:>7} & ", end="")
             else:
-                print(f"{d:>10,}", end="")
+                print(f"{d:>7,} & ", end="")
         print()
 
     print(f"Loading data from {args.data_path}")
@@ -240,7 +240,13 @@ def describe(args: Arguments):
         print(f"Split: {split}")
         query_count = dict()
         session_count = dict()
-        for structure, queries in structure_to_queries.items():
+        structures = []
+        for structure in query_name_dict:
+            if structure not in structure_to_queries:
+                continue
+            structures.append(structure)
+            queries = structure_to_queries[structure]
+
             num_queries = 0
             num_sessions = 0
             for query in queries:
@@ -253,11 +259,11 @@ def describe(args: Arguments):
         query_count["Total"] = sum(query_count.values())
         session_count["Total"] = sum(session_count.values())
 
-        structures = list(structure_to_queries.keys())
+        # structures = list(structure_to_queries.keys())
         structure_names = [query_name_dict[s] for s in structures] + ["Total"]
         structures += ["Total"]
 
-        cell_divider = "-" * 10
+        cell_divider = "-" * 7
         print_row(cell_divider, [cell_divider for _ in structures])
         print_row("Structure", structure_names)
         print_row("Queries", [query_count[s] for s in structures])
