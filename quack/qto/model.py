@@ -290,7 +290,7 @@ class KGReasoning(nn.Module):
 
         return scores
 
-    def rerank_fuzzy(self, scores, preferences, labels):
+    def rerank_fuzzi(self, scores, preferences, labels):
         similarities = self.kbc_model.compute_similarities(preferences, kind="real")
 
         # similarities are in theory in (-1.0, 1.0), but let's prevent numerical issues
@@ -299,7 +299,11 @@ class KGReasoning(nn.Module):
         similarities = torch.sigmoid(torch.arctanh(similarities))
 
         positive_similarities = similarities[labels == 1].prod(dim=0)
-        negative_similarities = -similarities[labels == 0].prod(dim=0)
+        negative_similarities = (1.0 - similarities[labels == 0]).prod(dim=0)
+
+        scores = scores * positive_similarities * negative_similarities
+
+        return scores
 
     def rerank_nqr(self, scores, preferences, labels):
         # == Part 1: Embed preferences ==

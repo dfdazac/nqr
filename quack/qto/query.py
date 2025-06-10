@@ -104,7 +104,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'fuzzi'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
@@ -403,6 +403,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         session_scores = model.rerank_greedy(scores, preferences, labels)
                     elif args.reranker in ("ranknet", "nqr"):
                         session_scores = model.rerank_nqr(scores, preferences, labels)
+                    elif args.reranker == "fuzzi":
+                        session_scores = model.rerank_fuzzi(scores, preferences, labels)
 
                     # Compute pairwise accuracy after reranking
                     pos_scores = session_scores[positives].unsqueeze(1)
