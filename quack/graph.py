@@ -1,58 +1,44 @@
-import requests
+import jinja2
+from SPARQLWrapper import JSON, SPARQLWrapper, CSV
+import socket
+import urllib.error
+import pandas as pd
 
 
-class GraphDBError(Exception):
-    pass
+class GraphDatabase:
+    def __init__(self, graphdb_endpoint: str, tasks: list[str]):
+        self.graphdb_endpoint = graphdb_endpoint
+        env = jinja2.Environment(loader=jinja2.PackageLoader("quack",
+                                                             "queries"))
+        self.task_templates = {task: env.get_template(f"{task}.jinja") for task in tasks}
+        self.wrapper = SPARQLWrapper(graphdb_endpoint)
+        self.wrapper.setReturnFormat(JSON)
 
-
-class KnowledgeGraph:
-    def __init__(self, graphdb_url: str):
-        self.graphdb_url = graphdb_url
-
-    def create_repository(self, repo_id, ruleset="rdfs", storage_folder="storage"):
+    @staticmethod
+    def _extract_ids(val):
         """
-        Create a new repository in GraphDB.
-
-        Parameters:
-        - repo_id: str, unique identifier for the repository
-        - ruleset: str, ruleset to use (default is "rdfs")
-        - storage_folder: str, storage folder for the repository (default is "storage")
+        Extracts the numeric ID from a KG entity or relation IRI of the form:
+        'http://example.org/Q123' or 'http://example.org/P456'.
         """
-        url = f"{self.graphdb_url}/rest/repositories"
-        config = {
-            "id": repo_id,
-            "title": repo_id,
-            "type": "free",
-            "params": {
-                "ruleset": ruleset,
-                "storage-folder": storage_folder
-            }
-        }
+        return int(val.split('/')[-1][1:])
 
-        headers = {"Content-Type": "application/json"}
+    def run_query(self, task, splits, flat_ids, extract_ids=True):
+        query = self.task_templates[task].render({
+            "splits": splits,
+            "flat_ids": flat_ids
+        })
+
         try:
-            response = requests.post(url, headers=headers, json=config)
-        except requests.exceptions.ConnectionError:
-            raise GraphDBError(f"Failed to connect to GraphDB."
-                               f" Is the server running at {self.graphdb_url}?")
+            self.wrapper.setQuery(query)
+            result = self.wrapper.query().convert()
 
-        if response.status_code == 201:
-            print(f"Repository '{repo_id}' created successfully!")
-        elif response.status_code == 409:
-            print(f"Repository '{repo_id}' already exists.")
-        else:
-            print(f"Failed to create repository: {response.status_code} - {response.text}")
+            df = pd.DataFrame(result['results']['bindings'])
+            df = df.applymap(lambda x: x['value'])
 
-    def run(self):
-        pass   
+            if extract_ids:
+                df = df.applymap(self._extract_ids)
 
+            return df
+        except (urllib.error.URLError, ConnectionRefusedError, socket.timeout, socket.error) as e:
+            raise ConnectionError(f"Connection failed: {e}") from e
 
-def test_engine():
-    engine = KnowledgeGraph("http://localhost:7200")
-    try:
-        engine.create_repository("test_repo")
-    except GraphDBError as e:
-        print(e)
-
-if __name__ == "__main__":
-    test_engine()

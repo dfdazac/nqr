@@ -15,6 +15,7 @@ from tqdm import tqdm
 from quack.feedback import PreferenceGenerator
 from quack.qto.query import name_query_dict, query_name_dict
 from quack.qto.util import flatten
+from quack.graph import GraphDatabase
 
 
 COMMAND_EMBED = "embed"
@@ -153,14 +154,18 @@ def generate(args: Arguments):
     preference_generator = PreferenceGenerator(embeddings, entity_to_row, id2ent,
                                                id2rel, args.max_num_sessions,
                                                args.plot)
-    query_structures = [name_query_dict[query_type] for query_type in args.tasks.split(".")]
+    tasks_list = args.tasks.split(".")
+    query_structures = [name_query_dict[query_type] for query_type in tasks_list]
     subsample_map = {
         "train": args.subsample_train,
         "valid": args.subsample_valid,
         "test": args.subsample_test
     }
+
+    graph_database = GraphDatabase(args.graphdb_endpoint, tasks_list)
+
     # Cluster answers to queries
-    for split in splits:
+    for i, split in enumerate(splits):
         split_sessions = dict()
         num_queries = 0
 
@@ -174,11 +179,16 @@ def generate(args: Arguments):
             structure_query_sessions = dict()
 
             print(f"Generating {split} split for {structure_name} queries...")
+            task = query_name_dict[structure]
+            query_splits = splits[:i + 1]
             for query in tqdm(all_queries, mininterval=1, disable=args.plot):
-                answer_ids = list(answers[split][query])
-                num_answers = len(answer_ids)
+                bindings = graph_database.run_query(task, query_splits, flatten(query))
+                num_variables = bindings.shape[1]
 
-                if not args.min_answer_threshold <= num_answers <= args.max_answer_threshold:
+                unique_target_ids = set(bindings.iloc[:, -1].values)
+                assert answers[split][query] == unique_target_ids
+
+                if not args.min_answer_threshold <= len(answers[split][query]) <= args.max_answer_threshold:
                     continue
 
                 if args.plot:
@@ -192,17 +202,52 @@ def generate(args: Arguments):
                         elif kind == "r":
                             print(f"{i} Predicate: {id2rel[identifier]}")
 
-                query_sessions = preference_generator.generate(answer_ids, descriptions)
-                structure_query_sessions[query] = query_sessions
+                # Find clusters for values of intermediate variables
+                session_data = [[] for _ in range(num_variables)]
+                for j in range(num_variables):
+                    answer_ids = list(set(bindings.iloc[:, j]))
 
-                if args.plot and len(query_sessions) > 0:
-                    for session in query_sessions:
-                        for kind, ids in zip(("Positives", "Negatives"), session):
-                            print(kind)
-                            for id in ids:
-                                print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
+                    if not args.min_answer_threshold <= len(answer_ids) <= args.max_answer_threshold:
+                        continue
 
-                    a = input("Press enter to continue")
+                    query_sessions = preference_generator.generate(answer_ids, descriptions)
+
+                    if j == num_variables - 1:
+                        # The last variable is the target variable, so we store their clusters directly
+                        session_data[j] = query_sessions
+
+                        if args.plot and len(query_sessions) > 0:
+                            for session in query_sessions:
+                                for kind, ids in zip(("Positives", "Negatives"), session):
+                                    print(kind)
+                                    for id in ids:
+                                        print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
+
+                            a = input("Press enter to continue")
+                    else:
+                        # Check if clusters of intermediate variables (explicit feedback) lead to clusters of target
+                        # variable assignments (implicit feedback). If so, they make it into the dataset.
+                        intermediate_and_target_df = bindings.iloc[:, [j, -1]]
+                        for session in query_sessions:
+                            positives, negatives = session
+
+                            pos_implicit_answers_mask = intermediate_and_target_df.iloc[:, 0].isin(positives)
+                            neg_implicit_answers_mask = intermediate_and_target_df.iloc[:, 0].isin(negatives)
+
+                            pos_implicit_answers = set(intermediate_and_target_df[pos_implicit_answers_mask].iloc[:, -1].values)
+                            neg_implicit_answers = set(intermediate_and_target_df[neg_implicit_answers_mask].iloc[:, -1].values)
+
+                            # Get answers only reachable from the positive set
+                            strict_pos_implicit_answers = pos_implicit_answers.difference(neg_implicit_answers)
+                            if len(strict_pos_implicit_answers) > 0:
+                                strict_neg_implicit_answers = unique_target_ids.difference(strict_pos_implicit_answers)
+                                session_data[j].append((
+                                    positives,
+                                    negatives,
+                                    list(strict_pos_implicit_answers), list(strict_neg_implicit_answers)
+                                ))
+
+                structure_query_sessions[query] = session_data
 
             if args.subsampling_ratio is not None and subsample_map.get(split, False):
                     random.seed(args.seed)
@@ -212,7 +257,7 @@ def generate(args: Arguments):
 
             split_sessions.update(structure_query_sessions)
 
-        with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "wb") as f:
+        with open(osp.join(args.data_path, f"{split}-sessions-v2.pkl"), "wb") as f:
             pkl.dump(split_sessions, f)
 
     print("Done!")
