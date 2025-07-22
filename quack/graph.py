@@ -33,10 +33,10 @@ class GraphDatabase:
             result = self.wrapper.query().convert()
 
             df = pd.DataFrame(result['results']['bindings'])
-            df = df.applymap(lambda x: x['value'])
+            df = df.map(lambda x: x['value'])
 
             if extract_ids:
-                df = df.applymap(self._extract_ids)
+                df = df.map(self._extract_ids)
 
             return df
         except (urllib.error.URLError, ConnectionRefusedError, socket.timeout, socket.error) as e:
