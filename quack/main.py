@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from datasets import load_dataset
 import random
+import requests
 from sentence_transformers import SentenceTransformer
 from tap import Tap
 from torch.utils.data import DataLoader
@@ -19,13 +20,15 @@ from quack.qto.util import flatten
 COMMAND_EMBED = "embed"
 COMMAND_GENERATE = "generate"
 COMMAND_DESCRIBE = "describe"
-COMMANDS = Literal[COMMAND_EMBED, COMMAND_GENERATE, COMMAND_DESCRIBE]
+COMMAND_LOAD = "load"
+COMMANDS = Literal[COMMAND_EMBED, COMMAND_LOAD, COMMAND_GENERATE, COMMAND_DESCRIBE]
 
 
 class Arguments(Tap):
     command: COMMANDS
 
     data_path: str
+    graphdb_endpoint: str = "http://localhost:7200/repositories/fb15k237"
     embedding_model: str = "NovaSearch/stella_en_400M_v5"
 
     tasks = "1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF"
@@ -270,10 +273,47 @@ def describe(args: Arguments):
         print_row("Sessions", [session_count[s] for s in structures])
 
 
+def load_graphdb(args: Arguments):
+    # Write .nt files from txt
+    all_splits = ["train", "valid", "test"]
+    graph_uri_map = {
+        "train": "http://example.org/train",
+        "valid": "http://example.org/valid",
+        "test": "http://example.org/test"
+    }
+
+    for split in all_splits:
+        txt_path = osp.join(args.data_path, f"{split}.txt")
+        nt_path = osp.join(args.data_path, f"{split}.nt")
+        with open(txt_path) as txt_file, open(nt_path, "w") as nt_file:
+            for line in txt_file:
+                s, p, o = line.strip().split()
+                nt_file.write(f"<http://example.org/Q{s}> "
+                              f"<http://example.org/P{p}> "
+                              f"<http://example.org/Q{o}> .\n")
+        print(f"nt file saved at {nt_path}")
+
+        # Post files to GraphDB
+        graphdb_post_url = f"{args.graphdb_endpoint}/statements"
+        graph_uri = graph_uri_map[split]
+        params = {"context": f"<{graph_uri}>"}
+        headers = {"Content-Type": "application/n-triples"}
+
+        with open(nt_path, "rb") as data:
+            response = requests.post(graphdb_post_url, params=params, headers=headers, data=data)
+
+        if response.status_code == 204:
+            print(f"Successfully uploaded {split}.nt to graph <{graph_uri}>")
+        else:
+            print(f"Failed to upload {split}.nt: {response.status_code} {response.text}")
+
+
 def main():
     args = Arguments().parse_args()
     if args.command == COMMAND_EMBED:
         embed(args)
+    elif args.command == COMMAND_LOAD:
+        load_graphdb(args)
     elif args.command == COMMAND_GENERATE:
         generate(args)
         describe(args)
