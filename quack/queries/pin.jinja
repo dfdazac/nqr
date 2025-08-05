@@ -1,0 +1,15 @@
+{% raw %}
+PREFIX ex: <http://example.org/>
+{% endraw %}
+
+SELECT ?x ?y
+{% for split in splits %}
+FROM ex:{{ split }}
+{% endfor %}
+WHERE {
+    ex:Q{{ flat_ids[0] }} ex:P{{ flat_ids[1] }} ?x .
+    ?x ex:P{{ flat_ids[2] }} ?y .
+    FILTER NOT EXISTS {
+        ex:Q{{ flat_ids[3] }} ex:P{{ flat_ids[4] }} ?y .
+    }
+}
