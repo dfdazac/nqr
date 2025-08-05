@@ -40,7 +40,7 @@ class Arguments(Tap):
 
     min_answer_threshold_train: int = 10
     """Minimum number of answers to consider a query in the training set"""
-    min_answer_threshold_test: int = 20
+    min_answer_threshold_test: int = 10
     """Minimum number of answers to consider a query in the validation and test sets"""
     max_answer_threshold: int = 100
     """Maximum number of answers to consider a query"""
@@ -189,10 +189,10 @@ def generate(args: Arguments):
             num_queries += len(all_queries)
             structure_query_sessions = dict()
 
-            print(f"Generating {split} split for {structure_name} queries...")
             task = query_name_dict[structure]
             query_splits = splits[:i + 1]
-            for query in tqdm(all_queries, mininterval=1, disable=args.plot):
+            bar_description = f"Generating {structure_name} {split} queries"
+            for query in tqdm(all_queries, mininterval=1, disable=args.plot, desc=bar_description):
                 query_hard_answers = answers[split][query]
                 if not min_answer_threshold <= len(query_hard_answers) <= args.max_answer_threshold:
                     continue
@@ -201,7 +201,6 @@ def generate(args: Arguments):
                 num_variables = bindings.shape[1]
 
                 # Only keep bindings that lead to a hard answer
-
                 hard_bindings_mask = bindings.iloc[:, -1].isin(query_hard_answers)
                 bindings = bindings[hard_bindings_mask]
 
@@ -273,6 +272,8 @@ def generate(args: Arguments):
 
                 if session_data_stored:
                     structure_query_sessions[query] = session_data
+                    # if len(structure_query_sessions) == 100:
+                    #     break
 
             if args.subsampling_ratio is not None and subsample_map.get(split, False):
                     random.seed(args.seed)
