@@ -280,11 +280,22 @@ class KGReasoning(nn.Module):
         scores[preferences[labels == 0]] = min_score - 1
         return scores
 
-    def rerank_cosine(self, scores, preferences, labels, alpha_p, alpha_n):
+    def rerank_cosine(self, scores, preferences, labels, alpha_p, alpha_n, mean=False):
         similarities = self.kbc_model.compute_similarities(preferences)
 
-        positive_similarities = similarities[labels == 1].sum(dim=0)
-        negative_similarities = -similarities[labels == 0].sum(dim=0)
+        if not mean:
+            positive_similarities = similarities[labels == 1].sum(dim=0)
+            negative_similarities = -similarities[labels == 0].sum(dim=0)
+        else:
+            positive_similarities = torch.zeros_like(scores)
+            negative_similarities = torch.zeros_like(scores)
+            pos_labels_mask = labels == 1
+            neg_labels_mask = labels == 0
+
+            if pos_labels_mask.sum().item() > 0:
+                positive_similarities = similarities[pos_labels_mask].mean(dim=0)
+            if neg_labels_mask.sum().item() > 0:
+                negative_similarities = -similarities[neg_labels_mask].mean(dim=0)
 
         scores = scores * alpha_p + positive_similarities * (1 - alpha_p) + scores * alpha_n + negative_similarities * (1 - negative_similarities)
 

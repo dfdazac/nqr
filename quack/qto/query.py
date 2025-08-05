@@ -9,6 +9,7 @@ import random
 import time
 from pprint import pprint
 
+from sklearn.metrics import ndcg_score
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
@@ -104,7 +105,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'cosine_mean'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
@@ -335,6 +336,13 @@ def train(model, args, tasks, device, output_path):
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
+def compute_ndcg(relevance_scores, predicted_scores, k_values=(10, 100)):
+    results = {}
+    for k in k_values:
+        results[f"ndcg@{k}"] = ndcg_score(relevance_scores, predicted_scores, k=k, ignore_ties=False)
+    return results
+
+
 @torch.inference_mode()
 def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode, preference):
     '''
@@ -345,6 +353,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     results = defaultdict(list)
     reranked_delta = defaultdict(lambda: defaultdict(list))
     session_count = 0
+
+    use_mean_cosine = args.reranker == "cosine_mean"
 
     evaluate_preferences = args.preference != "none"
 
@@ -366,11 +376,20 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         query_cumulative_metrics = defaultdict(float)
 
         if evaluate_preferences:
+            query_easy_answers = list(easy_answers[queries[0]])
+            query_hard_answers = list(hard_answers[queries[0]])
             for session in sessions:
                 session_count += 1
                 # session_scores = scores.clone()
 
                 positives, negatives = session
+                relevance_scores = torch.zeros_like(scores, dtype=torch.long)
+                relevance_scores[query_easy_answers] = 1
+                relevance_scores[query_hard_answers] = 1
+                relevance_scores[negatives] = 1
+                relevance_scores[positives] = 2
+                relevance_scores = relevance_scores.unsqueeze(0).cpu()
+                initial_metrics.update(compute_ndcg(relevance_scores, scores.unsqueeze(0).cpu()))
 
                 if preference == "positive":
                     session_feedback = positives[:10]
@@ -395,8 +414,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     labels = torch.tensor(session_labels[:t+1], device=device)
                     if args.reranker == "default":
                         session_scores = scores
-                    if args.reranker == "cosine":
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n)
+                    if args.reranker in ("cosine", "cosine_mean"):
+                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
                     elif args.reranker == "random":
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":
@@ -412,6 +431,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
 
                     instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
+                    instant_metrics.update(compute_ndcg(relevance_scores, session_scores.unsqueeze(0).cpu()))
 
                     for metric in instant_metrics:
                         if metric.startswith('num'):
@@ -598,6 +618,8 @@ def main(args):
     # Now create wandb_config with valid output_path
     wandb_config = {**vars(args), "output_path": output_path}
     wandb.config.update(wandb_config)
+
+    print(f"Running with output path {output_path}")
 
     if args.do_train:
         train(model, args, tasks, device, output_path)
