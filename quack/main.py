@@ -24,6 +24,10 @@ COMMAND_DESCRIBE = "describe"
 COMMAND_LOAD = "load"
 COMMANDS = Literal[COMMAND_EMBED, COMMAND_LOAD, COMMAND_GENERATE, COMMAND_DESCRIBE]
 
+TRAIN_SPLIT = "train"
+VALID_SPLIT = "valid"
+TEST_SPLIT = "test"
+
 
 class Arguments(Tap):
     command: COMMANDS
@@ -34,8 +38,10 @@ class Arguments(Tap):
 
     tasks = "1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF"
 
-    min_answer_threshold: int = 10
-    """Minimum number of answers to consider a query"""
+    min_answer_threshold_train: int = 10
+    """Minimum number of answers to consider a query in the training set"""
+    min_answer_threshold_test: int = 20
+    """Minimum number of answers to consider a query in the validation and test sets"""
     max_answer_threshold: int = 100
     """Maximum number of answers to consider a query"""
     max_num_sessions: int = 5
@@ -136,13 +142,13 @@ def generate(args: Arguments):
     entity_to_row = emb_data["entity_to_row"]
 
     # Load queries
-    splits = ["train", "valid", "test"]
+    splits = [TRAIN_SPLIT, VALID_SPLIT, TEST_SPLIT]
     queries = dict()
     answers = dict()
     for split in splits:
         with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
             queries[split] = pkl.load(f)
-        kind = f"-hard" if split != "train" else ""
+        kind = f"-hard" if split != TRAIN_SPLIT else ""
         with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
             answers[split] = pkl.load(f)
     with open(osp.join(args.data_path, "id2ent.pkl"), "rb") as f:
@@ -169,6 +175,11 @@ def generate(args: Arguments):
         split_sessions = dict()
         num_queries = 0
 
+        if split == TRAIN_SPLIT:
+            min_answer_threshold = args.min_answer_threshold_train
+        else:
+            min_answer_threshold = args.min_answer_threshold_test
+
         for structure in query_structures:
             flat_structure = flatten(structure)
             if structure not in queries[split]:
@@ -182,21 +193,27 @@ def generate(args: Arguments):
             task = query_name_dict[structure]
             query_splits = splits[:i + 1]
             for query in tqdm(all_queries, mininterval=1, disable=args.plot):
+                query_hard_answers = answers[split][query]
+                if not min_answer_threshold <= len(query_hard_answers) <= args.max_answer_threshold:
+                    continue
+
                 bindings = graph_database.run_query(task, query_splits, flatten(query))
                 num_variables = bindings.shape[1]
 
-                unique_target_ids = set(bindings.iloc[:, -1].values)
-                assert answers[split][query] == unique_target_ids
+                # Only keep bindings that lead to a hard answer
 
-                if not args.min_answer_threshold <= len(answers[split][query]) <= args.max_answer_threshold:
-                    continue
+                hard_bindings_mask = bindings.iloc[:, -1].isin(query_hard_answers)
+                bindings = bindings[hard_bindings_mask]
+
+                unique_target_ids = set(bindings.iloc[:, -1].values)
+                assert query_hard_answers == unique_target_ids
 
                 if args.plot:
                     print(f"Query type: {structure_name}")
                     print(f"Query structure: {structure}")
                     flat_query = flatten(query)
                     print("Flat query:", " ".join([f"{t}_{k}" for k, t in enumerate(flat_structure)]))
-                    for i, (kind, identifier) in enumerate(zip(flat_structure, flat_query)):
+                    for j, (kind, identifier) in enumerate(zip(flat_structure, flat_query)):
                         if kind == "e":
                             print(f"{i}: [{id2ent[identifier]}] {descriptions[entity_to_row[id2ent[identifier]]][:150]}")
                         elif kind == "r":
@@ -204,10 +221,11 @@ def generate(args: Arguments):
 
                 # Find clusters for values of intermediate variables
                 session_data = [[] for _ in range(num_variables)]
+                session_data_stored = False
                 for j in range(num_variables):
                     answer_ids = list(set(bindings.iloc[:, j]))
 
-                    if not args.min_answer_threshold <= len(answer_ids) <= args.max_answer_threshold:
+                    if not min_answer_threshold <= len(answer_ids) <= args.max_answer_threshold:
                         continue
 
                     query_sessions = preference_generator.generate(answer_ids, descriptions)
@@ -215,6 +233,7 @@ def generate(args: Arguments):
                     if j == num_variables - 1:
                         # The last variable is the target variable, so we store their clusters directly
                         session_data[j] = query_sessions
+                        session_data_stored = True
 
                         if args.plot and len(query_sessions) > 0:
                             for session in query_sessions:
@@ -230,24 +249,30 @@ def generate(args: Arguments):
                         intermediate_and_target_df = bindings.iloc[:, [j, -1]]
                         for session in query_sessions:
                             positives, negatives = session
-
+                            # Select rows corresponding to entities in positives and negatives
                             pos_implicit_answers_mask = intermediate_and_target_df.iloc[:, 0].isin(positives)
                             neg_implicit_answers_mask = intermediate_and_target_df.iloc[:, 0].isin(negatives)
-
+                            # Select the answers (at position -1) induced by the positives and negatives
                             pos_implicit_answers = set(intermediate_and_target_df[pos_implicit_answers_mask].iloc[:, -1].values)
                             neg_implicit_answers = set(intermediate_and_target_df[neg_implicit_answers_mask].iloc[:, -1].values)
 
-                            # Get answers only reachable from the positive set
+                            # Induced answers might overlap. Get answers only those reachable from the positive set
                             strict_pos_implicit_answers = pos_implicit_answers.difference(neg_implicit_answers)
+
+                            # We finally add an instance to the dataset if the clustering of the intermediate
+                            # variable leads to non-empty and non-overlapping sets of induced answers.
                             if len(strict_pos_implicit_answers) > 0:
                                 strict_neg_implicit_answers = unique_target_ids.difference(strict_pos_implicit_answers)
-                                session_data[j].append((
-                                    positives,
-                                    negatives,
-                                    list(strict_pos_implicit_answers), list(strict_neg_implicit_answers)
-                                ))
+                                if len(strict_neg_implicit_answers) > 0:
+                                    session_data[j].append((
+                                        positives,
+                                        negatives,
+                                        list(strict_pos_implicit_answers), list(strict_neg_implicit_answers)
+                                    ))
+                                    session_data_stored = True
 
-                structure_query_sessions[query] = session_data
+                if session_data_stored:
+                    structure_query_sessions[query] = session_data
 
             if args.subsampling_ratio is not None and subsample_map.get(split, False):
                     random.seed(args.seed)
@@ -282,7 +307,7 @@ def describe(args: Arguments):
     for split in splits:
         with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
             structure_to_queries = pkl.load(f)
-        with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "rb") as f:
+        with open(osp.join(args.data_path, f"{split}-sessions-v2.pkl"), "rb") as f:
             query_to_sessions = pkl.load(f)
 
         print(f"Split: {split}")
@@ -300,7 +325,7 @@ def describe(args: Arguments):
             for query in queries:
                 if query in query_to_sessions:
                     num_queries += 1
-                    num_sessions += len(query_to_sessions[query])
+                    num_sessions += sum(map(len, query_to_sessions[query]))
             query_count[structure] = num_queries
             session_count[structure] = num_sessions
 
