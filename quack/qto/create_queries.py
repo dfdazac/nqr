@@ -179,7 +179,7 @@ def ground_queries(dataset, query_structure, ent_in, ent_out, small_ent_in, smal
     s0 = time.time()
     old_num_sampled = -1
 
-    with tqdm(total=gen_num, mininterval=5, desc=f"Generating {query_structure}") as bar:
+    with tqdm(total=gen_num, mininterval=5, desc=f"Generating {mode} {query_structure}", ncols=150) as bar:
         while num_sampled < gen_num:
             if num_sampled != 0:
                 if num_sampled % (gen_num//10) == 0 and num_sampled != old_num_sampled:
@@ -469,8 +469,8 @@ def main(dataset, seed, gen_train_num, gen_valid_num, gen_test_num, max_ans_num,
 
     params = {
         '1p': [200_751, 200_751, 200_751],
-        **{s: [0, 15_000, 15_000] for s in ('2p', '3p', '2i', '3i')},
-        **{s: [0, 15_000, 15_000] for s in ('2in', '3in', 'pin', 'pni', 'inp')},
+        **{s: [200_751, 0, 0] for s in ('2p', '2i', '3i')},
+        **{s: [20_000, 0, 0] for s in ('3p', '2in', '3in', 'pin', 'pni', 'inp')},
         **{s: [0, 15_000, 15_000] for s in ('pi', 'ip', '2u', 'up')}
     }
 
