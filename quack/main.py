@@ -296,12 +296,12 @@ def describe(args: Arguments):
     each split.
     """
     def print_row(label, data):
-        print(f"{label:>10}", end="")
+        print(f"{label:>12}", end="")
         for d in data:
             if type(d) == str:
-                print(f"{d:>7} & ", end="")
+                print(f"{d:>8} & ", end="")
             else:
-                print(f"{d:>7,} & ", end="")
+                print(f"{d:>8,} & ", end="")
         print()
 
     print(f"Loading data from {args.data_path}")
@@ -310,12 +310,18 @@ def describe(args: Arguments):
     for split in splits:
         with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
             structure_to_queries = pkl.load(f)
-        with open(osp.join(args.data_path, f"{split}-sessions-v2.pkl"), "rb") as f:
+        with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "rb") as f:
             query_to_sessions = pkl.load(f)
+        kind = "-hard" if split != "train" else ""
+        with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
+            answers = pkl.load(f)
 
         print(f"Split: {split}")
         query_count = dict()
+        pref_query_count = dict()
         session_count = dict()
+        max_answers = dict()
+        avg_answers = dict()
         structures = []
         for structure in query_name_dict:
             if structure not in structure_to_queries:
@@ -323,27 +329,48 @@ def describe(args: Arguments):
             structures.append(structure)
             queries = structure_to_queries[structure]
 
-            num_queries = 0
+            num_queries = len(queries)  # total queries for this structure
+            num_pref_queries = 0        # queries in query_to_sessions
             num_sessions = 0
+            max_num_answers = 0
+            total_num_answers = 0
+            num_counted = 0
             for query in queries:
                 if query in query_to_sessions:
-                    num_queries += 1
+                    num_pref_queries += 1
                     num_sessions += sum(map(len, query_to_sessions[query]))
+                # Compute max and avg number of answers for this structure
+                if query in answers:
+                    num_ans = len(answers[query])
+                    total_num_answers += num_ans
+                    num_counted += 1
+                    if num_ans > max_num_answers:
+                        max_num_answers = num_ans
             query_count[structure] = num_queries
+            pref_query_count[structure] = num_pref_queries
             session_count[structure] = num_sessions
+            max_answers[structure] = max_num_answers
+            avg_answers[structure] = (total_num_answers / num_counted) if num_counted > 0 else 0
 
         query_count["Total"] = sum(query_count.values())
+        pref_query_count["Total"] = sum(pref_query_count.values())
         session_count["Total"] = sum(session_count.values())
+        max_answers["Total"] = max(max_answers.values()) if max_answers else 0
+        avg_answers["Total"] = (sum(avg_answers[s] * (len(structure_to_queries[s]) if s in structure_to_queries else 0) for s in structures[:-1]) / sum(len(structure_to_queries[s]) for s in structures[:-1]) ) if structures[:-1] else 0
 
         # structures = list(structure_to_queries.keys())
         structure_names = [query_name_dict[s] for s in structures] + ["Total"]
         structures += ["Total"]
 
-        cell_divider = "-" * 7
-        print_row(cell_divider, [cell_divider for _ in structures])
+        # cell_divider = "-" * 10
+        # print_row(cell_divider, [cell_divider for _ in structures])
         print_row("Structure", structure_names)
         print_row("Queries", [query_count[s] for s in structures])
+        print_row("PrefQueries", [pref_query_count[s] for s in structures])
         print_row("Sessions", [session_count[s] for s in structures])
+        print_row("MaxAns", [max_answers[s] for s in structures])
+        print_row("AvgAns", [f"{avg_answers[s]:.2f}" for s in structures])
+        print()
 
 
 def load_graphdb(args: Arguments):
