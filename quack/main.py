@@ -40,7 +40,7 @@ class Arguments(Tap):
 
     min_answer_threshold_train: int = 10
     """Minimum number of answers to consider a query in the training set"""
-    min_answer_threshold_test: int = 10
+    min_answer_threshold_test: int = 20
     """Minimum number of answers to consider a query in the validation and test sets"""
     max_answer_threshold: int = 100
     """Maximum number of answers to consider a query"""
