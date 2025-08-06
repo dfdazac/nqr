@@ -310,7 +310,7 @@ def describe(args: Arguments):
     for split in splits:
         with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
             structure_to_queries = pkl.load(f)
-        with open(osp.join(args.data_path, f"{split}-sessions.pkl"), "rb") as f:
+        with open(osp.join(args.data_path, f"{split}-sessions-v2.pkl"), "rb") as f:
             query_to_sessions = pkl.load(f)
         kind = "-hard" if split != "train" else ""
         with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
