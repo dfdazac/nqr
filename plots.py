@@ -80,23 +80,25 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.savefig(output_filename)
 
 
-# plot_metrics_comparison(OrderedDict([
-#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
-#     ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
-#     ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag/metrics_over_time_test_mixed.pkl"),
-#     ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl")
-#     ]),
-#     output_filename="fb15k237_over_time.pdf"
-# )
+plot_metrics_comparison(OrderedDict([
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
+    ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
+    ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag/metrics_over_time_test_mixed.pkl"),
+    ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl"),
+    ("SCORE", "results/fb15k237-betae_10_0.0002_fuzzi_test_mixed_1749568602_k08fwokf/metrics_over_time_test_mixed.pkl")
+    ]),
+    output_filename="fb15k237_over_time.pdf"
+)
 
-# plot_metrics_comparison(OrderedDict([
-#     ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
-#     ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
-#     ("RankNet", "results/hetionet_10_0.001_ranknet_test_mixed_1747222015_y13wghbh/metrics_over_time_test_mixed.pkl"),
-#     ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrp/metrics_over_time_test_mixed.pkl")
-#     ]),
-#     output_filename="hetionet_over_time.pdf"
-# )
+plot_metrics_comparison(OrderedDict([
+    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
+    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
+    ("RankNet", "results/hetionet_10_0.001_ranknet_test_mixed_1747222015_y13wghbh/metrics_over_time_test_mixed.pkl"),
+    ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrp/metrics_over_time_test_mixed.pkl"),
+    ("SCORE", "results/hetionet_10_0.001_fuzzi_test_mixed_1749581331_h3jmalbk/metrics_over_time_test_mixed.pkl")
+    ]),
+    output_filename="hetionet_over_time.pdf"
+)
 
 def merge_test_and_sweep_data(test_runs_path, sweep_runs_path, output_path):
     test_runs_data = pd.read_csv(test_runs_path)
@@ -190,12 +192,12 @@ def plot_performance_with_kl(merged_data_paths, titles, highlights=None):
 
 
 # plot_performance_with_kl("results/fb15k237_final_performance_with_kl.csv")
-plot_performance_with_kl(["results/fb15k237_final_performance_with_kl.csv",
-                          "results/hetionet_final_performance_with_kl.csv"],
-                         ("FB15k237", "Hetionet"),
-                         highlights=[
-                             {"coords": [(0.5467, 0.1406), (0.4980, 0.0870)], "label": "QTO", "color": "black"},
-                             {"coords": [(0.9005, 0.0301), (0.7661, 0.0061)], "label": "Cosine", "color": "C1"},
-                            {"coords": [(0.7547, 0.0821), (0.7139, 0.0686)], "label": "RankNet", "color": "C2"}
-                         ]
-                         )
+# plot_performance_with_kl(["results/fb15k237_final_performance_with_kl.csv",
+#                           "results/hetionet_final_performance_with_kl.csv"],
+#                          ("FB15k237", "Hetionet"),
+#                          highlights=[
+#                              {"coords": [(0.5467, 0.1406), (0.4980, 0.0870)], "label": "QTO", "color": "black"},
+#                              {"coords": [(0.9005, 0.0301), (0.7661, 0.0061)], "label": "Cosine", "color": "C1"},
+#                             {"coords": [(0.7547, 0.0821), (0.7139, 0.0686)], "label": "RankNet", "color": "C2"}
+#                          ]
+#                          )
