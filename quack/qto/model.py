@@ -280,15 +280,404 @@ class KGReasoning(nn.Module):
         scores[preferences[labels == 0]] = min_score - 1
         return scores
 
-    def rerank_cosine(self, scores, preferences, labels, alpha_p, alpha_n):
+    def rerank_cosine(self, scores, preferences, labels, alpha_p, alpha_n, mean=False):
         similarities = self.kbc_model.compute_similarities(preferences)
 
-        positive_similarities = similarities[labels == 1].sum(dim=0)
-        negative_similarities = -similarities[labels == 0].sum(dim=0)
+        if not mean:
+            positive_similarities = similarities[labels == 1].sum(dim=0)
+            negative_similarities = -similarities[labels == 0].sum(dim=0)
+        else:
+            positive_similarities = torch.zeros_like(scores)
+            negative_similarities = torch.zeros_like(scores)
+            pos_labels_mask = labels == 1
+            neg_labels_mask = labels == 0
 
-        scores = scores * alpha_p + positive_similarities * (1 - alpha_p) + scores * alpha_n + negative_similarities * (1 - negative_similarities)
+            if pos_labels_mask.sum().item() > 0:
+                positive_similarities = similarities[pos_labels_mask].mean(dim=0)
+            if neg_labels_mask.sum().item() > 0:
+                negative_similarities = -similarities[neg_labels_mask].mean(dim=0)
+
+        scores = scores * alpha_p + positive_similarities * (1 - alpha_p) + scores * alpha_n + negative_similarities * (1 - alpha_n)
 
         return scores
+
+    def rerank_score(self, scores, preferences, labels, norm='drastic'):
+        similarities = self.kbc_model.compute_similarities(preferences, kind="real")
+
+        # similarities are in theory in (-1.0, 1.0), but let's prevent numerical issues
+        similarities = torch.clamp(similarities, -1.0 + 1e-9, 1.0 - 1e-9)
+        # arctanh maps to (-inf, inf), and sigmoid to (0, 1)
+        similarities = torch.sigmoid(torch.arctanh(similarities))
+
+        pos = similarities[labels == 1]
+        neg = 1.0 - similarities[labels == 0]
+
+        def agg(X, kind):
+            if X.numel() == 0:
+                return torch.ones_like(scores)  # no constraints ⇒ no change
+            if kind == 'max':  # maximum t-conorm
+                return X.max(dim=0).values
+            if kind == 'prob':  # probabilistic sum: 1 - Π(1 - x)
+                return 1.0 - (1.0 - X).prod(dim=0)
+            if kind == 'bounded':  # bounded sum: min(1, Σ x)
+                return torch.clamp(X.sum(dim=0), max=1.0)
+            if kind == 'einstein':  # Einstein sum: (a+b)/(1+ab), folded
+                out = X[0]
+                for i in range(1, X.size(0)):
+                    b = X[i]
+                    out = (out + b) / (1.0 + out * b)
+                return out
+            if kind == 'nilpotent':  # nilpotent maximum, folded
+                out = X[0]
+                for i in range(1, X.size(0)):
+                    b = X[i]
+                    out = torch.where(out + b < 1.0, torch.maximum(out, b), torch.ones_like(out))
+                return out
+            if kind == 'drastic':  # drastic t-conorm (n-ary)
+                # 1 if ≥2 positives; else the single positive (or 0)
+                nz = (X > 0).sum(dim=0)
+                return torch.where(nz >= 2, torch.ones_like(scores), X.max(dim=0).values)
+            raise ValueError(f"Unknown norm {kind}")
+
+        if norm == 'prod':  # keep your original t-norm case
+            positive_similarities = pos.prod(dim=0) if pos.numel() else torch.ones_like(scores)
+            negative_similarities = neg.prod(dim=0) if neg.numel() else torch.ones_like(scores)
+        else:
+            positive_similarities = agg(pos, norm)
+            negative_similarities = agg(neg, norm)
+
+        scores = scores * positive_similarities * negative_similarities
+        return scores
+
+    def rerank_logit(self, scores, preferences, labels, *, wp=1.0, wn=0.0,
+                     sim_map="affine", temperature=1.0, cap=None, guard=1.0, eps=1e-6):
+        """
+        Principled additive-evidence reranker.
+        - scores: base scores in [0,1] (probabilities). If not, pass through a sigmoid first.
+        - wp, wn: weights for positive/negative evidence.
+        - sim_map: 'affine' uses (cos+1)/2; 'sigmoid' uses sigmoid(temperature * cos).
+        - cap: optional cap on |delta logit| per entity.
+        - guard: >=0; scales update by (1 - scores)**guard to protect already-high items.
+        """
+
+        # 1) Similarities in [-1,1] → s in (0,1)
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        if sim_map == "affine":
+            s = 0.5 * (sims + 1.0)
+        elif sim_map == "sigmoid":
+            s = torch.sigmoid(temperature * sims)
+        else:
+            raise ValueError("sim_map must be 'affine' or 'sigmoid'")
+
+        s = s.clamp(eps, 1.0 - eps)
+
+        # 2) Base scores to logits
+        p0 = scores.clamp(eps, 1.0 - eps)
+        L = torch.logit(p0)
+
+        pos = s[labels == 1]
+        neg = s[labels == 0]
+
+        # 3) Add log-odds evidence
+        delta = torch.zeros_like(scores)
+        if pos.numel():
+            delta = delta + wp * torch.logit(pos).mean(dim=0)  # favors high sim to P
+        if neg.numel():
+            delta = delta + wn * torch.logit(1.0 - neg).mean(dim=0)  # penalizes high sim to N
+
+        # 4) Optional protections
+        if guard > 0.0:
+            # Reduce the effect on already-confident items (scores near 1)
+            delta = delta * (1.0 - p0).pow(guard)
+        if cap is not None:
+            delta = delta.clamp(-cap, cap)
+
+        # 5) Back to probabilities; monotone in the base score
+        return torch.sigmoid(L + delta)
+
+    import torch
+
+    def rerank_logit_gated(self, scores, preferences, labels, *,
+                           wp=1.0, wn=1.0,  # evidence weights
+                           alpha=1.0, beta=1.0,  # gates: w_+=p^alpha, w_-=(1-p)^beta
+                           eta=1.0,  # global step size
+                           sim_map="affine",  # 'affine' -> (cos+1)/2 ; 'sigmoid' -> sigmoid(t*cos)
+                           temperature=1.0, cap=None, eps=1e-6):
+        # Similarities in [-1,1] -> s in (0,1)
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        if sim_map == "affine":
+            s = 0.5 * (sims + 1.0)
+        elif sim_map == "sigmoid":
+            s = torch.sigmoid(temperature * sims)
+        else:
+            raise ValueError("sim_map must be 'affine' or 'sigmoid'")
+        s = s.clamp(eps, 1.0 - eps)
+
+        p0 = scores.clamp(eps, 1.0 - eps)  # base prob
+        z = torch.logit(p0)  # base logit
+
+        pos = s[labels == 1]
+        neg = s[labels == 0]
+
+        # Log-odds evidence (affine->logit gives 2*atanh(cos))
+        dpos = torch.logit(pos).mean(dim=0) if pos.numel() else torch.zeros_like(scores)
+        dneg = -torch.logit(neg).mean(dim=0) if neg.numel() else torch.zeros_like(scores)
+
+        # Gates as functions of the base belief
+        w_pos = p0.pow(alpha)  # ↑ with z
+        w_neg = (1.0 - p0).pow(beta)  # ↓ with z
+
+        delta = eta * (wp * w_pos * dpos + wn * w_neg * dneg)
+        if cap is not None:
+            delta = delta.clamp(-cap, cap)
+
+        return torch.sigmoid(z + delta)
+
+    def rerank_beta(self, scores, preferences, labels, *,
+                    wp=1.0, wn=1.0,  # weights for P / N evidence
+                    gamma=5.0, rho=1.0,  # prior strength: k = gamma * (1 + |logit(p0)|^rho)
+                    sim_map="affine", eps=1e-6):
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        s = 0.5 * (sims + 1.0) if sim_map == "affine" else torch.sigmoid(sims)
+        s = s.clamp(eps, 1.0 - eps)
+
+        p0 = scores.clamp(eps, 1.0 - eps)
+        z0 = torch.logit(p0)
+        k = gamma * (1.0 + z0.abs().pow(rho))  # ↑ near confident extremes
+
+        pos = s[labels == 1]
+        neg = s[labels == 0]
+
+        alpha0 = k * p0
+        beta0 = k * (1.0 - p0)
+        alpha = alpha0 + (wp * pos.sum(dim=0) if pos.numel() else 0.0)
+        beta = beta0 + (wn * neg.sum(dim=0) if neg.numel() else 0.0)
+
+        return (alpha / (alpha + beta)).clamp(eps, 1.0 - eps)
+
+    def rerank_logit_trustband(self, scores, preferences, labels, *,
+                               wp=1.0, wn=1.0, tau_lo=0.35, tau_hi=0.65,
+                               sim_map="affine", temperature=1.0, cap=None, eps=1e-6):
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        s = 0.5 * (sims + 1.0) if sim_map == "affine" else torch.sigmoid(temperature * sims)
+        s = s.clamp(eps, 1.0 - eps)
+
+        p0 = scores.clamp(eps, 1.0 - eps)
+        z = torch.logit(p0)
+
+        pos = s[labels == 1]
+        neg = s[labels == 0]
+
+        dpos = torch.logit(pos).sum(dim=0) if pos.numel() else torch.zeros_like(scores)
+        dneg = -torch.logit(neg).sum(dim=0) if neg.numel() else torch.zeros_like(scores)
+
+        # ramp weights: w+=0 below tau_lo, 1 above tau_hi (and vice versa for w-)
+        w_pos = ((p0 - tau_lo) / max(tau_hi - tau_lo, 1e-6)).clamp(0.0, 1.0)
+        w_neg = ((tau_hi - p0) / max(tau_hi - tau_lo, 1e-6)).clamp(0.0, 1.0)
+
+        delta = wp * w_pos * dpos + wn * w_neg * dneg
+        if cap is not None:
+            delta = delta.clamp(-cap, cap)
+
+        return torch.sigmoid(z + delta)
+
+    def rerank_logit_rank(self, scores, preferences, labels, *,
+                          wp=1.0, wn=1.0, alpha=1.0, beta=1.0,
+                          sim_map="affine", eps=1e-6):
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        s = 0.5 * (sims + 1.0) if sim_map == "affine" else torch.sigmoid(sims)
+        s = s.clamp(eps, 1.0 - eps)
+
+        p0 = scores.clamp(eps, 1.0 - eps)
+        z = torch.logit(p0)
+
+        # ranks → [0,1], 1 for best rank
+        order = torch.argsort(scores, descending=True)
+        ranks = torch.empty_like(order, dtype=torch.float)
+        ranks[order] = torch.arange(scores.numel(), device=scores.device)
+        r = 1.0 - ranks / max(scores.numel() - 1, 1)  # 1 best … 0 worst
+
+        pos = s[labels == 1]
+        neg = s[labels == 0]
+        dpos = torch.logit(pos).sum(dim=0) if pos.numel() else torch.zeros_like(scores)
+        dneg = -torch.logit(neg).sum(dim=0) if neg.numel() else torch.zeros_like(scores)
+
+        w_pos = r.pow(alpha)  # ↑ for high-ranked items
+        w_neg = (1.0 - r).pow(beta)  # ↑ for low-ranked items
+
+        delta = wp * w_pos * dpos + wn * w_neg * dneg
+        return torch.sigmoid(z + delta)
+
+    import torch
+
+    def rerank_logit_tempered(
+            self,
+            scores,
+            preferences,
+            labels,
+            *,
+            c=0.8,  # trust-strength (0=no protection, 1=strong protection at extremes)
+            wp=1.0, wn=1.0,  # weights for P/N evidence
+            reduce="mean",  # "mean" keeps scale stable as interactions grow; "sum" is stronger
+            reliability=True,  # weight each preference by its base score
+            rel_pow=1.0,  # strength of reliability weighting
+            sim_map="affine",  # 'affine' -> (cos+1)/2
+            eps=1e-6,
+            cap=None  # optional cap on |new_logit - base_logit|
+    ):
+        # 1) Similarities -> (0,1)
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        if sim_map == "affine":
+            s = 0.5 * (sims + 1.0)
+        else:
+            raise ValueError("sim_map must be 'affine' for OTB")
+
+        s = s.clamp(eps, 1.0 - eps)
+
+        # 2) Base probs/logits
+        p0 = scores.clamp(eps, 1.0 - eps)
+        z0 = torch.logit(p0)
+
+        # 3) Split similarities by preference sets
+        pos = s[labels == 1]  # shape: (#P, E)
+        neg = s[labels == 0]  # shape: (#N, E)
+
+        # Optional reliability weights per preference row
+        if reliability:
+            # Assume `preferences` are entity indices into `scores`
+            base_pref = p0[preferences]  # shape: (#P+#N,)
+            w_pos_rows = (base_pref[labels == 1].pow(rel_pow)).unsqueeze(1) if pos.numel() else None
+            w_neg_rows = ((1.0 - base_pref[labels == 0]).pow(rel_pow)).unsqueeze(1) if neg.numel() else None
+        else:
+            w_pos_rows = None
+            w_neg_rows = None
+
+        # 4) Logit evidence from preferences (strong, heavy-tailed signal)
+        def red(t):
+            return t.mean(dim=0) if reduce == "mean" else t.sum(dim=0)
+
+        if pos.numel():
+            epos = torch.logit(pos)
+            if w_pos_rows is not None:
+                epos = w_pos_rows * epos
+            dpos = red(epos)
+        else:
+            dpos = torch.zeros_like(scores)
+
+        if neg.numel():
+            eneg = torch.logit(1.0 - neg)
+            if w_neg_rows is not None:
+                eneg = w_neg_rows * eneg
+            dneg = red(eneg)
+        else:
+            dneg = torch.zeros_like(scores)
+
+        Delta = wp * dpos + wn * dneg
+
+        # 5) Odds-tempered blending
+        lam = 1.0 - c * (4.0 * p0 * (1.0 - p0))  # in [1-c, 1], U-shaped in p0
+        z_new = lam * z0 + (1.0 - lam) * Delta
+
+        if cap is not None:
+            z_new = torch.clamp(z_new, z0 - cap, z0 + cap)
+
+        return torch.sigmoid(z_new)
+
+    import torch
+
+    def rerank_logit_residual(self, scores, preferences, labels, *,
+                              wp=1.0, wn=1.0,
+                              reduce="mean",  # "mean" keeps scale stable; "sum" is stronger
+                              topk=None,  # e.g., 1000 or a fraction of E
+                              eta=1.0,  # step size
+                              cap=None,  # optional cap in logit units
+                              eps=1e-6):
+        # Base prob/logit
+        p0 = scores.clamp(eps, 1.0 - eps)
+        z = torch.logit(p0)
+
+        # Similarities in [-1,1] -> (0,1), then logit-evidence
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        s = 0.5 * (sims + 1.0)  # affine map
+        s = s.clamp(eps, 1.0 - eps)
+
+        pos = s[labels == 1]  # (#P, E)
+        neg = s[labels == 0]  # (#N, E)
+
+        def red(X):
+            return X.mean(dim=0) if reduce == "mean" else X.sum(dim=0)
+
+        dpos = red(torch.logit(pos)) if pos.numel() else torch.zeros_like(scores)
+        dneg = red(torch.logit(1.0 - neg)) if neg.numel() else torch.zeros_like(scores)
+        delta_raw = wp * dpos + wn * dneg  # strong, heavy-tailed evidence
+
+        # ---- Residualize delta_raw against z: delta = delta_raw - (a*z + b)
+        if topk is not None and topk < scores.numel():
+            idx = torch.topk(scores, k=topk, largest=True).indices
+            z_m = z[idx];
+            d_m = delta_raw[idx]
+        else:
+            z_m = z;
+            d_m = delta_raw
+
+        zc = z_m - z_m.mean()
+        dc = d_m - d_m.mean()
+        var_z = (zc * zc).mean().clamp_min(eps)
+        a = (zc * dc).mean() / var_z  # slope of regressing d on z
+        b = d_m.mean() - a * z_m.mean()  # intercept
+        delta = delta_raw - (a * z + b)  # zero-mean, zero-corr w.r.t. z (on mask)
+
+        # Optional scale control + cap
+        if cap is not None:
+            delta = delta.clamp(-cap, cap)
+
+        z_new = z + eta * delta
+        return torch.sigmoid(z_new)
+
+    def rerank_logit_contrastive(self, scores, preferences, labels, *,
+                                 wp=1.0, wn=1.0, reduce="mean",
+                                 eta=1.0, cap=None, eps=1e-6):
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")  # [-1,1]
+        s = (0.5 * (sims + 1.0)).clamp(eps, 1 - eps)  # (0,1)
+
+        pos = s[labels == 1]
+        neg = s[labels == 0]
+        red = (lambda X: X.mean(dim=0)) if reduce == "mean" else (lambda X: X.sum(dim=0))
+
+        # use 0.5 (logit=0) when a side is absent → "no change"
+        sp = red(pos) if pos.numel() else torch.full_like(scores, 0.5)
+        sn = red(neg) if neg.numel() else torch.full_like(scores, 0.5)
+
+        delta = wp * torch.logit(sp) - wn * torch.logit(sn)  # contrastive evidence
+        if cap is not None:
+            delta = delta.clamp(-cap, cap)
+
+        z = torch.logit(scores.clamp(eps, 1 - eps))
+        return torch.sigmoid(z + eta * delta)
+
+    def rerank_logit_relative(self, scores, preferences, labels, *,
+                              wp=1.0, wn=1.0, reduce="mean",
+                              tau=0.05, eta=1.0, cap=None, eps=1e-6):
+        sims = self.kbc_model.compute_similarities(preferences, kind="real")
+        s = (0.5 * (sims + 1.0)).clamp(eps, 1 - eps)
+
+        pos = s[labels == 1];
+        neg = s[labels == 0]
+        red = (lambda X: X.mean(dim=0)) if reduce == "mean" else (lambda X: X.sum(dim=0))
+
+        sp = red(pos) if pos.numel() else torch.full_like(scores, 0.5)
+        sn = red(neg) if neg.numel() else torch.full_like(scores, 0.5)
+
+        # Only count negative similarity that *wins* over positive by margin tau
+        sn_rel = torch.clamp(sn - sp + tau, min=0.0, max=1.0)  # (0,1)
+        delta = wp * torch.logit(sp.clamp(eps, 1 - eps)) \
+                + wn * torch.logit((1.0 - sn_rel).clamp(eps, 1 - eps))
+
+        if cap is not None:
+            delta = delta.clamp(-cap, cap)
+
+        z = torch.logit(scores.clamp(eps, 1 - eps))
+        return torch.sigmoid(z + eta * delta)
 
     def rerank_nqr(self, scores, preferences, labels):
         # == Part 1: Embed preferences ==
