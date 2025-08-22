@@ -24,7 +24,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     method_names = method_to_paths.keys()
 
     for method, file_path in method_to_paths.items():
-        with open(file_path, "rb") as f:
+        with open(osp.join(file_path, "metrics_over_time_test_mixed.pkl"), "rb") as f:
             total_metrics_over_t_10 = p.load(f)
 
         # Extract metrics
@@ -35,7 +35,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
         metrics_all_methods.append([pairwise_acc, mrr_hard, hits_at_10])
 
     # Create subplots for boxplots
-    titles = ['Pairwise Accuracy', 'MRR', 'H@10']
+    titles = ['Pairwise Accuracy', 'MRR']#, 'H@10']
     x_start = [1, 1, 1]
     fig, axes = plt.subplots(1, len(titles), figsize=(10, 3.5))  # Increase figure size for better spacing
 
@@ -80,25 +80,87 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.savefig(output_filename)
 
 
-plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
-    ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag/metrics_over_time_test_mixed.pkl"),
-    ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl"),
-    ("SCORE", "results/fb15k237-betae_10_0.0002_fuzzi_test_mixed_1749568602_k08fwokf/metrics_over_time_test_mixed.pkl")
-    ]),
-    output_filename="fb15k237_over_time.pdf"
-)
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
+#     # ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine-f", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1755695485_sctcxiv2/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine-mean-f", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1755701742_xuypj0t0/metrics_over_time_test_mixed.pkl"),
+#     ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag/metrics_over_time_test_mixed.pkl"),
+#     ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot/metrics_over_time_test_mixed.pkl"),
+#     ("SCORE", "results/fb15k237-betae_10_0.0002_fuzzi_test_mixed_1749568602_k08fwokf/metrics_over_time_test_mixed.pkl")
+#     ]),
+#     output_filename="fb15k237_over_time.pdf"
+# )
+
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
+#     ("RankNet", "results/hetionet_10_0.001_ranknet_test_mixed_1747222015_y13wghbh/metrics_over_time_test_mixed.pkl"),
+#     ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrp/metrics_over_time_test_mixed.pkl"),
+#     ("SCORE", "results/hetionet_10_0.001_fuzzi_test_mixed_1749581331_h3jmalbk/metrics_over_time_test_mixed.pkl")
+#     ]),
+#     output_filename="hetionet_over_time.pdf"
+# )
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1746908572_wlxyi0d7/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1746909609_14rps2d8/metrics_over_time_test_mixed.pkl"),
-    ("RankNet", "results/hetionet_10_0.001_ranknet_test_mixed_1747222015_y13wghbh/metrics_over_time_test_mixed.pkl"),
-    ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1747027748_dj60prrp/metrics_over_time_test_mixed.pkl"),
-    ("SCORE", "results/hetionet_10_0.001_fuzzi_test_mixed_1749581331_h3jmalbk/metrics_over_time_test_mixed.pkl")
-    ]),
-    output_filename="hetionet_over_time.pdf"
-)
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1755770589_h0l9g8o0"),
+    ("Cosine-sum", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1755770798_tktyov9z"),
+    ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1755770842_5fjak9vq"),
+    # ("SCORE-prod", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755771480_zhazl9js"),
+    # ("SCORE-max", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755771954_7ff9g2a8"),
+    # ("SCORE-probsum", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755772476_zq4t7lw7"),
+    # ("SCORE-bounded", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755772506_a7o8hk0k"),
+    # ("SCORE-einstein", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755772541_8rcs40ca"),
+    # ("SCORE-nilpotent", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755772573_gvlsjqqf"),
+    # ("SCORE-drastic", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755772610_qmmp6quu"),
+    # ("logit-affine", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755774501_ke02lozf"),
+    # ("logit-affine-g1-v0", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755774788_qzoc405z"),
+    # ("logit-affine-g1", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755775669_rwydgbwp"),
+    # ("logit-sum-wn1.0", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755779330_8zyx94i2"),
+    # ("logit-sum-wn0.0", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755780218_vy4ze7gs"),
+    # ("logit-mean-wn1.0", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755779764_nlj7i8o1"),
+    # ("logit-mean-wn0.5", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755779988_etduru3t"),
+    # ("logit-mean-wn0.25", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755780036_6ksni993"),
+    # ("logit-mean-wn0.0", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755780135_7ff1lb7w"),
+    # ("gated-sum", "results/fb15k237-betae_10_0.0002_gated_test_mixed_1755782490_c80782r9"),
+    # ("gated-mean", "results/fb15k237-betae_10_0.0002_gated_test_mixed_1755782551_23qgxedx"),
+    # ("logitv2", "results/fb15k237-betae_10_0.0002_logitv2_test_mixed_1755775829_aa54fg39"),
+    # ("logitv3", "results/fb15k237-betae_10_0.0002_logitv2_test_mixed_1755777924_kx15t0r1"),
+    # ("logit-affine-clean", "results/fb15k237-betae_10_0.0002_logitv2_test_mixed_1755778180_ecs8otq1"),
+    # ("logit-affine-clean-nonorm", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755778418_axod6gaf"),
+    # ("logitv3-clean", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755778822_dpvukjsb"),
+    # ("logit-affine-g1-abs", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755775127_zlpipjyr"),
+    # ("logit-affine-g1-c2", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755774886_3fd81mto"),
+    # ("logit-sigmoid", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755774602_9c5rtip8"),
+    # ("beta", "results/fb15k237-betae_10_0.0002_beta_test_mixed_1755782983_hz6pjl1s"),
+    # ("trustband", "results/fb15k237-betae_10_0.0002_trustband_test_mixed_1755783101_owg8swvi"),
+    # ("logitrank", "results/fb15k237-betae_10_0.0002_logitrank_test_mixed_1755783131_y1an43d4"),
+    # ("tempered", "results/fb15k237-betae_10_0.0002_tempered_test_mixed_1755783576_82ag3qf5"),
+    # ("residual", "results/fb15k237-betae_10_0.0002_residual_test_mixed_1755784051_xxxrqi1n"),
+    # ("contrastive", "results/fb15k237-betae_10_0.0002_contrastive_test_mixed_1755787112_w1mksjbx"),
+    # ("relative", "results/fb15k237-betae_10_0.0002_relative_test_mixed_1755785686_i4ty0tht"),
+    ("logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755787260_1apwkaou"),
+    ("logit-v0sim", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755856496_6dyob0gk")
+]), output_filename="fb15k237_1p_over_time.pdf")
+
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1755787620_6cxdftkk"),
+#     ("Cosine-sum", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1755787915_muutykyy"),
+#     ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1755787693_p4s00mhe"),
+#     ("logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755788387_qei18lu9"),
+#     ("logit-sigmoid", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755788805_krt9sku9")
+# ]), output_filename="fb15k237_2p_over_time.pdf")
+
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy"),
+#     ("Cosine-sum", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1755695485_sctcxiv2"),
+#     ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1755701742_xuypj0t0"),
+#     ("Ranknet", "results/fb15k237-betae_10_0.0002_ranknet_test_mixed_1747160013_c610piag"),
+#     ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1746903805_34ftyrot"),
+#     ("SCORE", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755789224_lbtyvjq9")
+#     ]),
+#     output_filename="fb15k237_over_time_all.pdf"
+# )
 
 def merge_test_and_sweep_data(test_runs_path, sweep_runs_path, output_path):
     test_runs_data = pd.read_csv(test_runs_path)

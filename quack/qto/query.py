@@ -181,7 +181,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'score', 'cosine_mean', 'logit', 'logitv2', 'logitv3', 'gated', 'beta', 'trustband', 'logitrank', 'tempered', 'residual', 'contrastive', 'relative'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
@@ -423,6 +423,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     reranked_delta = defaultdict(lambda: defaultdict(list))
     session_count = 0
 
+    use_mean_cosine = args.reranker == "cosine_mean"
+
     evaluate_preferences = args.preference != "none"
 
     total_metrics_over_10_steps = defaultdict(list)
@@ -472,14 +474,38 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     labels = torch.tensor(session_labels[:t+1], device=device)
                     if args.reranker == "default":
                         session_scores = scores
-                    if args.reranker == "cosine":
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n)
+                    if args.reranker in ("cosine", "cosine_mean"):
+                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
                     elif args.reranker == "random":
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":
                         session_scores = model.rerank_greedy(scores, preferences, labels)
                     elif args.reranker in ("ranknet", "nqr"):
                         session_scores = model.rerank_nqr(scores, preferences, labels)
+                    elif args.reranker == "score":
+                        session_scores = model.rerank_score(scores, preferences, labels)
+                    elif args.reranker == "logit":
+                        session_scores = model.rerank_logit(scores, preferences, labels)
+                    elif args.reranker == "logitv2":
+                        session_scores = model.rerank_logit_v2(scores, preferences, labels)
+                    elif args.reranker == "logitv3":
+                        session_scores = model.rerank_logit_v3(scores, preferences, labels)
+                    elif args.reranker == "gated":
+                        session_scores = model.rerank_logit_gated(scores, preferences, labels)
+                    elif args.reranker == "beta":
+                        session_scores = model.rerank_beta(scores, preferences, labels)
+                    elif args.reranker == "trustband":
+                        session_scores = model.rerank_logit_trustband(scores, preferences, labels)
+                    elif args.reranker == "logitrank":
+                        session_scores = model.rerank_beta(scores, preferences, labels)
+                    elif args.reranker == "tempered":
+                        session_scores = model.rerank_logit_tempered(scores, preferences, labels)
+                    elif args.reranker == "residual":
+                        session_scores = model.rerank_logit_residual(scores, preferences, labels)
+                    elif args.reranker == "contrastive":
+                        session_scores = model.rerank_logit_contrastive(scores, preferences, labels)
+                    elif args.reranker == "relative":
+                        session_scores = model.rerank_logit_relative(scores, preferences, labels)
 
                     # Compute pairwise accuracy after reranking
                     pos_scores = session_scores[positives].unsqueeze(1)
@@ -675,6 +701,8 @@ def main(args):
     # Now create wandb_config with valid output_path
     wandb_config = {**vars(args), "output_path": output_path}
     wandb.config.update(wandb_config)
+
+    print(f"Running with output path {output_path}")
 
     if args.do_train:
         train(model, args, tasks, device, output_path)
