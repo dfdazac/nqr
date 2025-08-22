@@ -38,12 +38,10 @@ class Arguments(Tap):
 
     tasks = "1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF"
 
-    min_answer_threshold_train: int = 10
-    """Minimum number of answers to consider a query in the training set"""
-    min_answer_threshold_test: int = 20
-    """Minimum number of answers to consider a query in the validation and test sets"""
-    max_answer_threshold: int = 100
-    """Maximum number of answers to consider a query"""
+    min_items_to_cluster: int = 10
+    """Minimum number of bindings to consider for clustering"""
+    max_items_to_cluster: int = 100
+    """Maximum number of bindings to consider for clustering"""
     max_num_sessions: int = 5
     """Maximum number of sessions (partitions of the answer set) to generate
     for each query"""
@@ -176,11 +174,6 @@ def generate(args: Arguments):
         split_sessions = dict()
         num_queries = 0
 
-        if split == TRAIN_SPLIT:
-            min_answer_threshold = args.min_answer_threshold_train
-        else:
-            min_answer_threshold = args.min_answer_threshold_test
-
         for structure in query_structures:
             flat_structure = flatten(structure)
             if structure not in queries[split]:
@@ -196,8 +189,6 @@ def generate(args: Arguments):
             with tqdm(all_queries, mininterval=1, disable=args.plot, desc=bar_description) as pbar:
                 for query in pbar:
                     query_hard_answers = answers[split][query]
-                    if not min_answer_threshold <= len(query_hard_answers) <= args.max_answer_threshold:
-                        continue
 
                     full_bindings = graph_database.run_query(task, query_splits, flatten(query))
                     if split == TRAIN_SPLIT:
@@ -205,6 +196,10 @@ def generate(args: Arguments):
                     else:
                         # Easy bindings consider all edges except those in the current split
                         easy_bindings = graph_database.run_query(task, query_splits[:-1], flatten(query))
+
+                    # Some queries can only be answered when the validation/test edges are added
+                    if len(easy_bindings) == 0:
+                        continue
 
                     num_variables = full_bindings.shape[1]
                     unique_full_answers = set(full_bindings.iloc[:, -1])
@@ -228,7 +223,10 @@ def generate(args: Arguments):
                         full_answers = list(set(full_bindings.iloc[:, j]))
                         # Find clusters of answers. This results in different partitions of the answer set, of the form
                         # (preferred, non-preferred).
-                        query_sessions = preference_generator.generate(full_answers, descriptions)
+                        if args.min_items_to_cluster <= len(full_answers) <= args.max_items_to_cluster:
+                            query_sessions = preference_generator.generate(full_answers, descriptions)
+                        else:
+                            continue
 
                         # Check if clusters of intermediate variables (explicit feedback) lead to clusters of target
                         # variable assignments (implicit feedback). If so, they make it into the dataset.
