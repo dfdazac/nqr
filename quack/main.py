@@ -199,15 +199,16 @@ def generate(args: Arguments):
                     if not min_answer_threshold <= len(query_hard_answers) <= args.max_answer_threshold:
                         continue
 
-                    bindings = graph_database.run_query(task, query_splits, flatten(query))
-                    num_variables = bindings.shape[1]
+                    full_bindings = graph_database.run_query(task, query_splits, flatten(query))
+                    if split == TRAIN_SPLIT:
+                        easy_bindings = full_bindings
+                    else:
+                        # Easy bindings consider all edges except those in the current split
+                        easy_bindings = graph_database.run_query(task, query_splits[:-1], flatten(query))
 
-                    # Only keep bindings that lead to a hard answer
-                    hard_bindings_mask = bindings.iloc[:, -1].isin(query_hard_answers)
-                    bindings = bindings[hard_bindings_mask]
-
-                    unique_target_ids = set(bindings.iloc[:, -1].values)
-                    assert query_hard_answers == unique_target_ids
+                    num_variables = full_bindings.shape[1]
+                    unique_full_answers = set(full_bindings.iloc[:, -1])
+                    assert query_hard_answers.issubset(unique_full_answers)
 
                     if args.plot:
                         print(f"Query type: {structure_name}")
@@ -216,61 +217,58 @@ def generate(args: Arguments):
                         print("Flat query:", " ".join([f"{t}_{k}" for k, t in enumerate(flat_structure)]))
                         for j, (kind, identifier) in enumerate(zip(flat_structure, flat_query)):
                             if kind == "e":
-                                print(f"{i}: [{id2ent[identifier]}] {descriptions[entity_to_row[id2ent[identifier]]][:150]}")
+                                print(f"{j}: [{id2ent[identifier]}] {descriptions[entity_to_row[id2ent[identifier]]][:150]}")
                             elif kind == "r":
-                                print(f"{i} Predicate: {id2rel[identifier]}")
+                                print(f"{j} Predicate: {id2rel[identifier]}")
 
                     # Find clusters for values of intermediate variables
                     session_data = [[] for _ in range(num_variables)]
                     session_data_stored = False
                     for j in range(num_variables):
-                        answer_ids = list(set(bindings.iloc[:, j]))
+                        full_answers = list(set(full_bindings.iloc[:, j]))
+                        # Find clusters of answers. This results in different partitions of the answer set, of the form
+                        # (preferred, non-preferred).
+                        query_sessions = preference_generator.generate(full_answers, descriptions)
 
-                        if not min_answer_threshold <= len(answer_ids) <= args.max_answer_threshold:
-                            continue
+                        # Check if clusters of intermediate variables (explicit feedback) lead to clusters of target
+                        # variable assignments (implicit feedback). If so, they make it into the dataset.
+                        easy_var_target_bindings = easy_bindings.iloc[:, [j, -1]]
+                        full_var_target_bindings = full_bindings.iloc[:, [j, -1]]
 
-                        query_sessions = preference_generator.generate(answer_ids, descriptions)
+                        easy_var_bindings = set(easy_var_target_bindings.iloc[:, 0])
+                        for session in query_sessions:
+                            full_positives, full_negatives = session
 
-                        if j == num_variables - 1:
-                            # The last variable is the target variable, so we store their clusters directly
-                            session_data[j] = query_sessions
-                            session_data_stored = True
+                            # Are there enough entities if we drop test (hard) bindings?
+                            easy_positives = set(full_positives) & easy_var_bindings
+                            easy_negatives = set(full_negatives) & easy_var_bindings
+                            if len(easy_positives) < 5 or len(easy_negatives) < 5:
+                                continue
 
-                            if args.plot and len(query_sessions) > 0:
-                                for session in query_sessions:
-                                    for kind, ids in zip(("Positives", "Negatives"), session):
-                                        print(kind)
-                                        for id in ids:
-                                            print(f"\t[{id2ent[id]}] {descriptions[entity_to_row[id2ent[id]]][:150]}")
+                            # Select rows corresponding to entities in positives and negatives
+                            pos_implicit_answers_mask = full_var_target_bindings.iloc[:, 0].isin(full_positives)
+                            neg_implicit_answers_mask = full_var_target_bindings.iloc[:, 0].isin(full_negatives)
+                            # Select the answers (at position -1) induced by the positives and negatives
+                            pos_implicit_answers = set(full_var_target_bindings[pos_implicit_answers_mask].iloc[:, -1])
+                            neg_implicit_answers = set(full_var_target_bindings[neg_implicit_answers_mask].iloc[:, -1])
 
-                                a = input("Press enter to continue")
-                        else:
-                            # Check if clusters of intermediate variables (explicit feedback) lead to clusters of target
-                            # variable assignments (implicit feedback). If so, they make it into the dataset.
-                            intermediate_and_target_df = bindings.iloc[:, [j, -1]]
-                            for session in query_sessions:
-                                positives, negatives = session
-                                # Select rows corresponding to entities in positives and negatives
-                                pos_implicit_answers_mask = intermediate_and_target_df.iloc[:, 0].isin(positives)
-                                neg_implicit_answers_mask = intermediate_and_target_df.iloc[:, 0].isin(negatives)
-                                # Select the answers (at position -1) induced by the positives and negatives
-                                pos_implicit_answers = set(intermediate_and_target_df[pos_implicit_answers_mask].iloc[:, -1].values)
-                                neg_implicit_answers = set(intermediate_and_target_df[neg_implicit_answers_mask].iloc[:, -1].values)
+                            # Induced answers might overlap. Get answers only those reachable from the positive set
+                            strict_pos_implicit_answers = pos_implicit_answers.difference(neg_implicit_answers)
+                            # Compute intersection to limit to hard answers
+                            strict_pos_implicit_answers = strict_pos_implicit_answers & query_hard_answers
 
-                                # Induced answers might overlap. Get answers only those reachable from the positive set
-                                strict_pos_implicit_answers = pos_implicit_answers.difference(neg_implicit_answers)
-
-                                # We finally add an instance to the dataset if the clustering of the intermediate
-                                # variable leads to non-empty and non-overlapping sets of induced answers.
-                                if len(strict_pos_implicit_answers) > 0:
-                                    strict_neg_implicit_answers = unique_target_ids.difference(strict_pos_implicit_answers)
-                                    if len(strict_neg_implicit_answers) > 0:
-                                        session_data[j].append((
-                                            positives,
-                                            negatives,
-                                            list(strict_pos_implicit_answers), list(strict_neg_implicit_answers)
-                                        ))
-                                        session_data_stored = True
+                            # We finally add an instance to the dataset if the clustering of the intermediate
+                            # variable leads to non-empty and non-overlapping sets of induced answers.
+                            if len(strict_pos_implicit_answers) > 0:
+                                strict_neg_implicit_answers = query_hard_answers - strict_pos_implicit_answers
+                                if len(strict_neg_implicit_answers) > 0:
+                                    session_data[j].append((
+                                        list(easy_positives),
+                                        list(easy_negatives),
+                                        list(strict_pos_implicit_answers),
+                                        list(strict_neg_implicit_answers)
+                                    ))
+                                    session_data_stored = True
 
                     if session_data_stored:
                         structure_query_sessions[query] = session_data
@@ -278,10 +276,10 @@ def generate(args: Arguments):
                             break
 
             if args.subsampling_ratio is not None and subsample_map.get(split, False):
-                    random.seed(args.seed)
-                    num_samples = int(args.subsampling_ratio * len(structure_query_sessions))
-                    subsampled_queries = random.sample(list(structure_query_sessions.keys()), num_samples)
-                    structure_query_sessions = {q: structure_query_sessions[q] for q in subsampled_queries}
+                random.seed(args.seed)
+                num_samples = int(args.subsampling_ratio * len(structure_query_sessions))
+                subsampled_queries = random.sample(list(structure_query_sessions.keys()), num_samples)
+                structure_query_sessions = {q: structure_query_sessions[q] for q in subsampled_queries}
 
             split_sessions.update(structure_query_sessions)
 
