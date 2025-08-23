@@ -133,29 +133,17 @@ def embed(args: Arguments):
 
 
 def generate(args: Arguments):
-    # Load entity embeddings
     embeddings_filename = get_embeddings_filename(args.embedding_model)
     emb_data = torch.load(osp.join(args.data_path, embeddings_filename), weights_only=False)
     embeddings = emb_data["embeddings"]
     descriptions = emb_data["descriptions"]
     entity_to_row = emb_data["entity_to_row"]
 
-    # Load queries
-    splits = [TRAIN_SPLIT, VALID_SPLIT, TEST_SPLIT]
-    queries = dict()
-    answers = dict()
-    for split in splits:
-        with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
-            queries[split] = pkl.load(f)
-        kind = f"-hard" if split != TRAIN_SPLIT else ""
-        with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
-            answers[split] = pkl.load(f)
     with open(osp.join(args.data_path, "id2ent.pkl"), "rb") as f:
         id2ent = pkl.load(f)
     with open(osp.join(args.data_path, "id2rel.pkl"), "rb") as f:
         id2rel = pkl.load(f)
 
-    # Initialize PreferenceGenerator
     preference_generator = PreferenceGenerator(embeddings, entity_to_row, id2ent,
                                                id2rel, args.max_num_sessions,
                                                args.plot)
@@ -169,26 +157,36 @@ def generate(args: Arguments):
 
     graph_database = GraphDatabase(args.graphdb_endpoint, tasks_list)
 
-    # Cluster answers to queries
+    splits = [TRAIN_SPLIT, VALID_SPLIT, TEST_SPLIT]
     for i, split in enumerate(splits):
         split_sessions = dict()
         num_queries = 0
 
+        with open(osp.join(args.data_path, f"{split}-queries.pkl"), "rb") as f:
+            split_queries = pkl.load(f)
+        kind = f"-hard" if split != TRAIN_SPLIT else ""
+        with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
+            split_answers = pkl.load(f)
+
         for structure in query_structures:
             flat_structure = flatten(structure)
-            if structure not in queries[split]:
+            if structure not in split_queries:
                 continue
-            all_queries = queries[split][structure]
+            all_queries = split_queries[structure]
             structure_name = query_name_dict[structure]
             num_queries += len(all_queries)
             structure_query_sessions = dict()
 
+            queries_to_sample = int(args.subsampling_ratio * len(all_queries)) if args.subsampling_ratio else -1
+
             task = query_name_dict[structure]
             query_splits = splits[:i + 1]
             bar_description = f"Generating {structure_name} {split} queries"
-            with tqdm(all_queries, mininterval=1, disable=args.plot, desc=bar_description) as pbar:
-                for query in pbar:
-                    query_hard_answers = answers[split][query]
+
+            total = queries_to_sample if queries_to_sample > 0 else len(all_queries)
+            with tqdm(total=total, mininterval=1, disable=args.plot, desc=bar_description, ncols=100) as pbar:
+                for query in all_queries:
+                    query_hard_answers = split_answers[query]
 
                     full_bindings = graph_database.run_query(task, query_splits, flatten(query))
                     if split == TRAIN_SPLIT:
@@ -270,14 +268,13 @@ def generate(args: Arguments):
 
                     if session_data_stored:
                         structure_query_sessions[query] = session_data
+                        pbar.update()
+                        if 0 < queries_to_sample == len(structure_query_sessions) and subsample_map.get(split, False):
+                            break
                         if len(structure_query_sessions) == 10 and args.debug:
                             break
 
-            if args.subsampling_ratio is not None and subsample_map.get(split, False):
-                random.seed(args.seed)
-                num_samples = int(args.subsampling_ratio * len(structure_query_sessions))
-                subsampled_queries = random.sample(list(structure_query_sessions.keys()), num_samples)
-                structure_query_sessions = {q: structure_query_sessions[q] for q in subsampled_queries}
+                pbar.close()
 
             split_sessions.update(structure_query_sessions)
 
