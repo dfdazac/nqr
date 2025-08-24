@@ -1,6 +1,9 @@
+{% raw %}
 PREFIX ex: <http://example.org/>
+{% endraw %}
 
-SELECT ?x
+{% set select_line = '(COUNT(*) AS ?n)' if count else '?x' %}
+SELECT {{ select_line }}
 {% for split in splits %}
 FROM ex:{{ split }}
 {% endfor %}

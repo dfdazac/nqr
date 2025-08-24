@@ -37,7 +37,10 @@ class Arguments(Tap):
     embedding_model: str = "NovaSearch/stella_en_400M_v5"
 
     tasks = "1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF"
+    splits = "train.valid.test"
 
+    max_bindings: int = 10_000_000
+    """Maximum number of bindings to consider for a query"""
     min_items_to_cluster: int = 10
     """Minimum number of bindings to consider for clustering"""
     max_items_to_cluster: int = 100
@@ -155,10 +158,17 @@ def generate(args: Arguments):
         "test": args.subsample_test
     }
 
-    graph_database = GraphDatabase(args.graphdb_endpoint, tasks_list)
+    graph_database = GraphDatabase(args.graphdb_endpoint, tasks_list, args.max_bindings)
 
     splits = [TRAIN_SPLIT, VALID_SPLIT, TEST_SPLIT]
+    requested_splits = args.splits.split(".")
+    if not all([s in splits for s in requested_splits]):
+        raise ValueError(f"splits must be a subset of {splits}, got {requested_splits}")
+
     for i, split in enumerate(splits):
+        if split not in requested_splits:
+            continue
+
         split_sessions = dict()
         num_queries = 0
 
@@ -181,14 +191,18 @@ def generate(args: Arguments):
 
             task = query_name_dict[structure]
             query_splits = splits[:i + 1]
-            bar_description = f"Generating {structure_name} {split} queries"
+            bar_description = f"{structure_name} {split}"
 
             total = queries_to_sample if queries_to_sample > 0 else len(all_queries)
-            with tqdm(total=total, mininterval=1, disable=args.plot, desc=bar_description, ncols=100) as pbar:
+            with tqdm(total=total, mininterval=1, disable=args.plot, desc=bar_description, ncols=80) as pbar:
                 for query in all_queries:
                     query_hard_answers = split_answers[query]
 
-                    full_bindings = graph_database.run_query(task, query_splits, flatten(query))
+                    try:
+                        full_bindings = graph_database.run_query(task, query_splits, flatten(query))
+                    except OverflowError:
+                        continue
+
                     if split == TRAIN_SPLIT:
                         easy_bindings = full_bindings
                     else:
