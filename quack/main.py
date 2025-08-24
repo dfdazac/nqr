@@ -280,9 +280,16 @@ def generate(args: Arguments):
                                     ))
                                     session_data_stored = True
 
+                    if not args.subsampling_ratio:
+                        # When not sampling, we update the bar for every query, regardless of whether it was added
+                        pbar.update()
+
                     if session_data_stored:
                         structure_query_sessions[query] = session_data
-                        pbar.update()
+                        if args.subsampling_ratio:
+                            # When sampling, we update the bar for every query **with session data**
+                            pbar.update()
+
                         if 0 < queries_to_sample == len(structure_query_sessions) and subsample_map.get(split, False):
                             break
                         if len(structure_query_sessions) == 10 and args.debug:
