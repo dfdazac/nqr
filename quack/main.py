@@ -97,9 +97,16 @@ def embed(args: Arguments):
     embedder = SentenceTransformer(args.embedding_model,
                                    trust_remote_code=True)
     text_files = ["entity2textlong.txt", "entity2text.txt"]
+    missing_files = []
 
     for file in text_files:
         file_path = osp.join(args.data_path, file)
+        if not osp.exists(file_path):
+            missing_files.append(True)
+            continue
+        else:
+            missing_files.append(False)
+
         dataset = load_dataset("text",
                                data_files=file_path,
                                split="train")
@@ -125,6 +132,9 @@ def embed(args: Arguments):
             all_descriptions.extend(descriptions_to_embed)
             entity_to_row.update({e: num_rows + i for i, e in enumerate(entities_to_embed)})
             num_rows += len(entities_to_embed)
+
+    if all(missing_files):
+        raise ValueError(f"No text files found at {args.data_path}")
 
     all_embeddings = np.concatenate(all_embeddings)
     embeddings_filename = get_embeddings_filename(args.embedding_model)
