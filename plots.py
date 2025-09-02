@@ -31,12 +31,14 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
         mrr_hard = np.array(total_metrics_over_t_10['mrr_hard'])
         hits_at_10 = np.array(total_metrics_over_t_10['hits@10_hard'])
         pairwise_acc = np.array(total_metrics_over_t_10['pairwise_accuracy'])
+        ndcg_at_10 = np.array(total_metrics_over_t_10['ndcg@10'])
+        ndcg_at_100 = np.array(total_metrics_over_t_10['ndcg@100'])
 
-        metrics_all_methods.append([pairwise_acc, mrr_hard, hits_at_10])
+        metrics_all_methods.append([pairwise_acc, mrr_hard, hits_at_10, ndcg_at_10, ndcg_at_100])
 
     # Create subplots for boxplots
-    titles = ['Pairwise Accuracy', 'MRR']#, 'H@10']
-    x_start = [1, 1, 1]
+    titles = ['Pairwise Accuracy', 'MRR', 'H@10', 'NDCG@10']
+    x_start = [1, 1, 1, 1]
     fig, axes = plt.subplots(1, len(titles), figsize=(10, 3.5))  # Increase figure size for better spacing
 
     # Plot metrics
@@ -79,7 +81,14 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.subplots_adjust(bottom=0.275)  # Make room for legend
     plt.savefig(output_filename)
 
-
+plot_metrics_comparison(OrderedDict([
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756822902_d6ku3cpp"),
+    # ("SumCosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1756814620_ttsl3gi6"),
+    # ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756815137_v63al3uk"),
+    # ("SCORE", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756815548_mi4fkeq2")
+]),
+output_filename="fb15k237v2_1p_over_time_fixed_ndcg.pdf"
+)
 # plot_metrics_comparison(OrderedDict([
 #     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
 #     # ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
@@ -102,10 +111,10 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
 #     output_filename="hetionet_over_time.pdf"
 # )
 
-plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1755770589_h0l9g8o0"),
-    ("Cosine-sum", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1755770798_tktyov9z"),
-    ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1755770842_5fjak9vq"),
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1755770589_h0l9g8o0"),
+#     ("Cosine-sum", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1755770798_tktyov9z"),
+#     ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1755770842_5fjak9vq"),
     # ("SCORE-prod", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755771480_zhazl9js"),
     # ("SCORE-max", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755771954_7ff9g2a8"),
     # ("SCORE-probsum", "results/fb15k237-betae_10_0.0002_score_test_mixed_1755772476_zq4t7lw7"),
@@ -139,9 +148,9 @@ plot_metrics_comparison(OrderedDict([
     # ("residual", "results/fb15k237-betae_10_0.0002_residual_test_mixed_1755784051_xxxrqi1n"),
     # ("contrastive", "results/fb15k237-betae_10_0.0002_contrastive_test_mixed_1755787112_w1mksjbx"),
     # ("relative", "results/fb15k237-betae_10_0.0002_relative_test_mixed_1755785686_i4ty0tht"),
-    ("logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755787260_1apwkaou"),
-    ("logit-v0sim", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755856496_6dyob0gk")
-]), output_filename="fb15k237_1p_over_time.pdf")
+#     ("logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755787260_1apwkaou"),
+#     ("logit-v0sim", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1755856496_6dyob0gk")
+# ]), output_filename="fb15k237_1p_over_time.pdf")
 
 # plot_metrics_comparison(OrderedDict([
 #     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1755787620_6cxdftkk"),
