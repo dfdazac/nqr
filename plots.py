@@ -67,7 +67,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
         ax.spines['right'].set_visible(False)
 
         if title == "Pairwise Accuracy":
-            ax.set_ylim([0, 1])
+            ax.set_ylim([0.5, 1])
 
     # Add legend with correct colors
     legend_patches = [
@@ -75,7 +75,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
         *[plt.Line2D([0], [0], color=color, lw=3 ) for color in colors[1:num_methods]]
     ]
 
-    fig.legend(legend_patches, method_names, loc='lower center', bbox_to_anchor=(0.5, 0.0), ncol=len(method_names))
+    fig.legend(legend_patches, method_names , loc='lower center', bbox_to_anchor=(0.5, 0.0), ncol=len(method_names))
 
     plt.tight_layout()
     plt.subplots_adjust(bottom=0.275)  # Make room for legend
@@ -85,9 +85,7 @@ plot_metrics_comparison(OrderedDict([
     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756897770_gbeqpegp"),
     ("SumCosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1756898617_k4r7s7ju"),
     ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756898251_18i57f16"),
-    ("SCORE-logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756898992_zkm30yk4"),
-    ("SCORE-prob-max", "results/fb15k237-betae_10_0.0002_score_test_mixed_1756899425_v3hjx1zx"),
-    ("SCORE-prob-prob", "results/fb15k237-betae_10_0.0002_score_test_mixed_1756900411_s2j8y9jx")
+    ("SCORE-logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756929438_bcfcciqq"),
 ]),
 output_filename="fb15k237v2_1p_over_time_fixed_ndcg.pdf"
 )
