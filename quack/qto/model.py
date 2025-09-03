@@ -301,8 +301,7 @@ class KGReasoning(nn.Module):
 
         return scores
 
-    def rerank_logit(self, scores, preferences, labels, *, wp=1.0, wn=1.0,
-                     guard=1.0, eps=1e-6):
+    def rerank_logit(self, scores, preferences, labels, *, wp=1.0, wn=1.0, eps=1e-6):
         """
         Additive-evidence reranker.
         - scores: base scores in [0,1] (probabilities). If not, pass through a sigmoid first.
@@ -317,8 +316,7 @@ class KGReasoning(nn.Module):
         similarities = similarities.clamp(eps, 1.0 - eps)
 
         # 2) Base scores to logits
-        p0 = scores.clamp(eps, 1.0 - eps)
-        L = torch.logit(p0)
+        logits = torch.logit(scores.clamp(eps, 1.0 - eps))
 
         pos = similarities[labels == 1]
         neg = similarities[labels == 0]
@@ -330,59 +328,8 @@ class KGReasoning(nn.Module):
         if neg.numel():
             delta = delta + wn * torch.logit(1.0 - neg).mean(dim=0)  # penalizes high sim to N
 
-        # 4) Optional protections
-        if guard > 0.0:
-            # Reduce the effect on already-confident items (scores near 1)
-            delta = delta * (1.0 - p0).pow(guard)
-
         # 5) Back to probabilities; monotone in the base score
-        return torch.sigmoid(L + delta)
-
-    def rerank_score(self, scores, preferences, labels, norm='prob'):
-        similarities = self.kbc_model.compute_similarities(preferences, kind="real")
-
-        # similarities are in theory in (-1.0, 1.0), but let's prevent numerical issues
-        similarities = torch.clamp(similarities, -1.0 + 1e-9, 1.0 - 1e-9)
-        # arctanh maps to (-inf, inf), and sigmoid to (0, 1)
-        similarities = torch.sigmoid(torch.arctanh(similarities))
-
-        non_preferred_mask = labels == 0
-        similarities[non_preferred_mask] = 1.0 - similarities[non_preferred_mask]
-
-        def agg(X, kind):
-            if X.numel() == 0:
-                return torch.ones_like(scores)  # no constraints ⇒ no change
-            if kind == 'max':  # maximum t-conorm
-                return X.max(dim=0).values
-            if kind == 'prob':  # probabilistic sum: 1 - Π(1 - x)
-                return 1.0 - (1.0 - X).prod(dim=0)
-            if kind == 'bounded':  # bounded sum: min(1, Σ x)
-                return torch.clamp(X.sum(dim=0), max=1.0)
-            if kind == 'einstein':  # Einstein sum: (a+b)/(1+ab), folded
-                out = X[0]
-                for i in range(1, X.size(0)):
-                    b = X[i]
-                    out = (out + b) / (1.0 + out * b)
-                return out
-            if kind == 'nilpotent':  # nilpotent maximum, folded
-                out = X[0]
-                for i in range(1, X.size(0)):
-                    b = X[i]
-                    out = torch.where(out + b < 1.0, torch.maximum(out, b), torch.ones_like(out))
-                return out
-            if kind == 'drastic':  # drastic t-conorm (n-ary)
-                # 1 if ≥2 positives; else the single positive (or 0)
-                nz = (X > 0).sum(dim=0)
-                return torch.where(nz >= 2, torch.ones_like(scores), X.max(dim=0).values)
-            raise ValueError(f"Unknown norm {kind}")
-
-        if norm == 'prod':  # keep your original t-norm case
-            similarities = similarities.prod(dim=0)
-        else:
-            similarities = agg(similarities, norm)
-
-        scores = scores * similarities
-        return scores
+        return torch.sigmoid(logits + delta)
 
     def rerank_nqr(self, scores, preferences, labels):
         # == Part 1: Embed preferences ==
