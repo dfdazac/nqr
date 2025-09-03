@@ -301,7 +301,7 @@ class KGReasoning(nn.Module):
 
         return scores
 
-    def rerank_logit(self, scores, preferences, labels, *, wp=1.0, wn=1.0, eps=1e-6):
+    def rerank_score(self, scores, preferences, labels, *, wp=1.0, wn=1.0, eps=1e-6):
         """
         Additive-evidence reranker.
         - scores: base scores in [0,1] (probabilities). If not, pass through a sigmoid first.

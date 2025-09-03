@@ -181,7 +181,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'score', 'cosine_mean', 'logit', 'logitv2', 'logitv3', 'gated', 'beta', 'trustband', 'logitrank', 'tempered', 'residual', 'contrastive', 'relative'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'score'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
@@ -515,8 +515,6 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                             session_scores = model.rerank_nqr(scores, preferences, labels)
                         elif args.reranker == "score":
                             session_scores = model.rerank_score(scores, preferences, labels)
-                        elif args.reranker == "logit":
-                            session_scores = model.rerank_logit(scores, preferences, labels)
                         else:
                             raise ValueError(f"Unknown reranker {args.reranker}")
 
