@@ -82,10 +82,12 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.savefig(output_filename)
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756822902_d6ku3cpp"),
-    # ("SumCosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1756814620_ttsl3gi6"),
-    # ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756815137_v63al3uk"),
-    # ("SCORE", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756815548_mi4fkeq2")
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756897770_gbeqpegp"),
+    ("SumCosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1756898617_k4r7s7ju"),
+    ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756898251_18i57f16"),
+    ("SCORE-logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756898992_zkm30yk4"),
+    ("SCORE-prob-max", "results/fb15k237-betae_10_0.0002_score_test_mixed_1756899425_v3hjx1zx"),
+    ("SCORE-prob-prob", "results/fb15k237-betae_10_0.0002_score_test_mixed_1756900411_s2j8y9jx")
 ]),
 output_filename="fb15k237v2_1p_over_time_fixed_ndcg.pdf"
 )
