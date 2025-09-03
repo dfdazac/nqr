@@ -707,7 +707,7 @@ def main(args):
     folder_name += f"_{args.preference}_{int(time.time())}"
 
     # Initialize wandb early to get run ID
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', notes=args.notes)
+    wandb.init(project="score", mode='online' if args.wandb else 'disabled', notes=args.notes)
     folder_name += f"_{wandb.run.id}"
     output_path = os.path.join('results', folder_name)
     if not os.path.exists(output_path):
