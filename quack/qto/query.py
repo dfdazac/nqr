@@ -9,6 +9,7 @@ import random
 import time
 from pprint import pprint
 
+from sklearn.metrics import ndcg_score
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
@@ -23,8 +24,7 @@ from quack.qto.util import flatten_query, set_global_seed
 print(  )
 
 query_name_dict = {('e', ('r',)): '1p',
-                   (('e', ('r',)), ('e', ('s',))): '1ps1',
-                   (('e', ('r',)), ('e', ('s', 'n'))): '1pns1',
+                   (('e', ('r',)), "s0"): '1ps0',
 
                    ('e', ('r', 'r')): '2p',
                    ((('e', ('r',)), ('e', ('s',))), ('r',)): '2ps1',
@@ -412,6 +412,13 @@ def train(model, args, tasks, device, output_path):
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
+def compute_ndcg(relevance_scores, predicted_scores, k_values=(10, 100)):
+    results = {}
+    for k in k_values:
+        results[f"ndcg@{k}"] = ndcg_score(relevance_scores, predicted_scores, k=k, ignore_ties=False)
+    return results
+
+
 @torch.inference_mode()
 def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode, preference):
     '''
@@ -442,116 +449,126 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         if args.save_scores:
             query_to_ranking[query_name_dict[query_structures[0]]][queries[0]] = scores.tolist()
 
-        query_cumulative_metrics = defaultdict(float)
-
         if evaluate_preferences:
-            for session in sessions:
-                session_count += 1
-                # session_scores = scores.clone()
+            query_easy_answers = list(easy_answers[queries[0]])
+            query_hard_answers = list(hard_answers[queries[0]])
+            for pos_id, variable_position_sessions in enumerate(sessions):
+                query_cumulative_metrics = defaultdict(float)
+                base_metrics = dict(initial_metrics)
+                for session in variable_position_sessions:
+                    session_count += 1
+                    # session_scores = scores.clone()
 
-                positives, negatives = session
+                    positives, negatives, pos_implicit_answers, neg_implicit_answers = session
 
-                if preference == "positive":
-                    session_feedback = positives[:10]
-                    session_labels = [1] * len(session_feedback)
-                elif preference == "negative":
-                    session_feedback = negatives[:10]
-                    session_labels = [0] * len(session_feedback)
-                elif preference == "mixed":
-                    pos_feedback = positives[:5]
-                    neg_feedback = negatives[:5]
-                    pos_labels = [1] * len(pos_feedback)
-                    neg_labels = [0] * len(neg_feedback)
+                    # relevance: 0 = unknown/incorrect, 1 = hard (less preferred), 2 = hard (preferred)
+                    relevance_scores = torch.zeros_like(scores, dtype=torch.long)
+                    relevance_scores[neg_implicit_answers] = 1
+                    relevance_scores[pos_implicit_answers] = 2
 
-                    session_feedback = [i for pair in zip(positives[:5], negatives[:5]) for i in pair]
-                    session_labels = [i for pair in zip(pos_labels, neg_labels) for i in pair]
+                    # Remove easy answers from evaluation (known in the graph)
+                    easy_mask = torch.zeros_like(scores, dtype=torch.bool)
+                    easy_mask[positives] = True
+                    easy_mask[negatives] = True
+                    keep_mask = ~easy_mask
 
-                cumulative_metrics = defaultdict(float)
-                metrics_over_10_steps = defaultdict(list)
-                for t in range(len(session_feedback)):
-                    # Rerank embedding scores based on preferences
-                    preferences = torch.tensor(session_feedback[:t+1], device=device)
-                    labels = torch.tensor(session_labels[:t+1], device=device)
-                    if args.reranker == "default":
-                        session_scores = scores
-                    if args.reranker in ("cosine", "cosine_mean"):
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
-                    elif args.reranker == "random":
-                        session_scores = model.rerank_random(scores, preferences, labels)
-                    elif args.reranker == "greedy":
-                        session_scores = model.rerank_greedy(scores, preferences, labels)
-                    elif args.reranker in ("ranknet", "nqr"):
-                        session_scores = model.rerank_nqr(scores, preferences, labels)
-                    elif args.reranker == "score":
-                        session_scores = model.rerank_score(scores, preferences, labels)
-                    elif args.reranker == "logit":
-                        session_scores = model.rerank_logit(scores, preferences, labels)
-                    elif args.reranker == "logitv2":
-                        session_scores = model.rerank_logit_v2(scores, preferences, labels)
-                    elif args.reranker == "logitv3":
-                        session_scores = model.rerank_logit_v3(scores, preferences, labels)
-                    elif args.reranker == "gated":
-                        session_scores = model.rerank_logit_gated(scores, preferences, labels)
-                    elif args.reranker == "beta":
-                        session_scores = model.rerank_beta(scores, preferences, labels)
-                    elif args.reranker == "trustband":
-                        session_scores = model.rerank_logit_trustband(scores, preferences, labels)
-                    elif args.reranker == "logitrank":
-                        session_scores = model.rerank_beta(scores, preferences, labels)
-                    elif args.reranker == "tempered":
-                        session_scores = model.rerank_logit_tempered(scores, preferences, labels)
-                    elif args.reranker == "residual":
-                        session_scores = model.rerank_logit_residual(scores, preferences, labels)
-                    elif args.reranker == "contrastive":
-                        session_scores = model.rerank_logit_contrastive(scores, preferences, labels)
-                    elif args.reranker == "relative":
-                        session_scores = model.rerank_logit_relative(scores, preferences, labels)
+                    assert torch.all(relevance_scores[query_hard_answers] >= 1)
+                    assert torch.all(keep_mask[query_hard_answers])
 
-                    # Compute pairwise accuracy after reranking
-                    pos_scores = session_scores[positives].unsqueeze(1)
-                    neg_scores = session_scores[negatives].unsqueeze(0)
-                    num_pairs = len(positives) * len(negatives)
-                    pairwise_accuracy = (pos_scores > neg_scores).sum().item() / num_pairs
-                    cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
+                    # Slice to filtered candidates: hard answers + all remaining unknowns
+                    rel_eval = relevance_scores[keep_mask].unsqueeze(0).cpu()
+                    scores_eval = scores[keep_mask].unsqueeze(0).cpu()
 
-                    instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
+                    base_metrics.update(compute_ndcg(rel_eval, scores_eval))
 
-                    for metric in instant_metrics:
-                        if metric.startswith('num'):
-                            continue
-                        absolute_delta = instant_metrics[metric] - initial_metrics[metric]
-                        relative_delta = absolute_delta / (1.0 if initial_metrics[metric] == 0 else initial_metrics[metric])
-                        cumulative_metrics[f"{metric}"] += instant_metrics[metric]
-                        cumulative_metrics[f"{metric}_delta"] += relative_delta
+
+                    if preference == "positive":
+                        session_feedback = positives[:10]
+                        session_labels = [1] * len(session_feedback)
+                    elif preference == "negative":
+                        session_feedback = negatives[:10]
+                        session_labels = [0] * len(session_feedback)
+                    elif preference == "mixed":
+                        pos_feedback = positives[:5]
+                        neg_feedback = negatives[:5]
+                        pos_labels = [1] * len(pos_feedback)
+                        neg_labels = [0] * len(neg_feedback)
+
+                        session_feedback = [i for pair in zip(positives[:5], negatives[:5]) for i in pair]
+                        session_labels = [i for pair in zip(pos_labels, neg_labels) for i in pair]
+
+                    cumulative_metrics = defaultdict(float)
+                    metrics_over_10_steps = defaultdict(list)
+                    for t in range(len(session_feedback)):
+                        # Rerank embedding scores based on preferences
+                        preferences = torch.tensor(session_feedback[:t+1], device=device)
+                        labels = torch.tensor(session_labels[:t+1], device=device)
+                        if args.reranker == "default":
+                            session_scores = scores
+                        elif args.reranker in ("cosine", "cosine_mean"):
+                            session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
+                        elif args.reranker == "random":
+                            session_scores = model.rerank_random(scores, preferences, labels)
+                        elif args.reranker == "greedy":
+                            session_scores = model.rerank_greedy(scores, preferences, labels)
+                        elif args.reranker in ("ranknet", "nqr"):
+                            session_scores = model.rerank_nqr(scores, preferences, labels)
+                        elif args.reranker == "score":
+                            session_scores = model.rerank_score(scores, preferences, labels)
+                        elif args.reranker == "logit":
+                            session_scores = model.rerank_logit(scores, preferences, labels)
+                        else:
+                            raise ValueError(f"Unknown reranker {args.reranker}")
+
+                        # Compute pairwise accuracy after reranking
+                        pos_scores = session_scores[pos_implicit_answers].unsqueeze(1)
+                        neg_scores = session_scores[neg_implicit_answers].unsqueeze(0)
+                        pairwise_accuracy = (pos_scores > neg_scores).float().mean().item()
+                        cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
+
+                        instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
+
+                        scores_eval = session_scores[keep_mask].unsqueeze(0).cpu()
+                        instant_metrics.update(compute_ndcg(rel_eval, scores_eval))
+
+                        for metric in instant_metrics:
+                            if metric.startswith('num'):
+                                continue
+                            absolute_delta = instant_metrics[metric] - base_metrics[metric]
+                            relative_delta = absolute_delta / (1.0 if base_metrics[metric] == 0 else base_metrics[metric])
+                            cumulative_metrics[f"{metric}"] += instant_metrics[metric]
+                            cumulative_metrics[f"{metric}_delta"] += relative_delta
+                            if t < 10 <= len(session_feedback):
+                                if t == 0:
+                                    metrics_over_10_steps[metric].append(base_metrics[metric])
+                                metrics_over_10_steps[metric].append(instant_metrics[metric])
+                                metrics_over_10_steps[f"{metric}_delta"].append(relative_delta)
+
+                            if t == len(session_feedback) - 1:
+                                reranked_delta[query_structures[0]][metric].append(absolute_delta)
+
                         if t < 10 <= len(session_feedback):
-                            if t == 0:
-                                metrics_over_10_steps[metric].append(initial_metrics[metric])
-                            metrics_over_10_steps[metric].append(instant_metrics[metric])
-                            metrics_over_10_steps[f"{metric}_delta"].append(relative_delta)
+                            metrics_over_10_steps['pairwise_accuracy'].append(pairwise_accuracy)
 
-                        if t == len(session_feedback) - 1:
-                            reranked_delta[query_structures[0]][metric].append(absolute_delta)
+                        if args.reranker == "default":
+                            break
 
-                    if t < 10 <= len(session_feedback):
-                        metrics_over_10_steps['pairwise_accuracy'].append(pairwise_accuracy)
+                    for metric in cumulative_metrics:
+                        if args.reranker == "default":
+                            session_length = 1
+                        else:
+                            session_length = len(session_feedback)
+                        query_cumulative_metrics[metric] += cumulative_metrics[metric] / session_length
 
-                    if args.reranker == "default":
-                        break
+                    for metric in metrics_over_10_steps:
+                        total_metrics_over_10_steps[metric].append(metrics_over_10_steps[metric])
 
-                for metric in cumulative_metrics:
-                    if args.reranker == "default":
-                        session_length = 1
-                    else:
-                        session_length = len(session_feedback)
-                    query_cumulative_metrics[metric] += cumulative_metrics[metric] / session_length
+                for metric, value in query_cumulative_metrics.items():
+                    base_metrics[f"cumulative_{metric}"] = value / len(variable_position_sessions)
 
-                for metric in metrics_over_10_steps:
-                    total_metrics_over_10_steps[metric].append(metrics_over_10_steps[metric])
-
-            for metric, value in query_cumulative_metrics.items():
-                initial_metrics[f"cumulative_{metric}"] = value / len(sessions)
-
-        results[query_structures[0]].append(initial_metrics)
+                results[(query_structures[0], "s0")].append(base_metrics)
+        else:
+            results[query_structures[0]].append(initial_metrics)
 
     metrics = collections.defaultdict(lambda: collections.defaultdict(int))
     for query_structure in results:
@@ -614,9 +631,9 @@ def load_data(args, tasks, split):
     else:
         hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
         easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
-    sessions_path = osp.join(args.data_path, f"{split}-sessions.pkl")
+    sessions_path = osp.join(args.data_path, f"{split}-sessions-v2.pkl")
     if osp.exists(sessions_path):
-        sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
+        sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions-v2.pkl"), "rb"))
     else:
         sessions = dict()
 
