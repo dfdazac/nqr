@@ -336,8 +336,8 @@ def describe(args: Arguments):
             structure_to_queries = pkl.load(f)
         with open(osp.join(args.data_path, f"{split}-sessions-v2.pkl"), "rb") as f:
             query_to_sessions = pkl.load(f)
-        kind = "-hard" if split != "train" else ""
-        with open(osp.join(args.data_path, f"{split}{kind}-answers.pkl"), "rb") as f:
+        answer_kind = "-hard" if split != "train" else ""
+        with open(osp.join(args.data_path, f"{split}{answer_kind}-answers.pkl"), "rb") as f:
             answers = pkl.load(f)
 
         print(f"Split: {split}")
