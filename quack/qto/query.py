@@ -23,101 +23,55 @@ from quack.qto.util import flatten_query, set_global_seed
 
 print(  )
 
-query_name_dict = {('e', ('r',)): '1p',
-                   (('e', ('r',)), "s0"): '1ps0',
+query_name_dict = {
+    ('e', ('r',)): '1p',
+    (('e', ('r',)), "s0"): '1ps0',
 
-                   ('e', ('r', 'r')): '2p',
-                   ((('e', ('r',)), ('e', ('s',))), ('r',)): '2ps1',
-                   ((('e', ('r',)), ('e', ('s', 'n'))), ('r',)): '2pns1',
-                   (('e', ('r', 'r')), ('e', ('s',))): '2ps2',
-                   (('e', ('r', 'r')), ('e', ('s', 'n'))): '2pns2',
-                   (((('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('s',))): '2ps12',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('s', 'n'))): '2pns12',
+    ('e', ('r', 'r')): '2p',
+    (('e', ('r', 'r')), "s1"): '2ps1',
 
-                   ('e', ('r', 'r', 'r')): '3p',
-                   ((('e', ('r',)), ('e', ('s',))), ('r', 'r')): '3ps1',
-                   ((('e', ('r',)), ('e', ('s', 'n'))), ('r', 'r')): '3pns1',
-                   ((('e', ('r', 'r')), ('e', ('s',))), ('r',)): '3ps2',
-                   ((('e', ('r', 'r')), ('e', ('s', 'n'))), ('r',)): '3pns2',
-                   (('e', ('r', 'r', 'r')), ('e', ('s',))): '3ps3',
-                   (('e', ('r', 'r', 'r')), ('e', ('s', 'n'))): '3pns3',
-                   (((((('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('s',))), ('r',)), ('e', ('s',))): '3ps123',
-                   (((((('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('s', 'n'))): '3pns123',
+    ('e', ('r', 'r', 'r')): '3p',
+    (('e', ('r', 'r', 'r')), "s2"): '3ps2',
 
-                   (('e', ('r',)), ('e', ('r',))): '2i',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('s',))): '2is1',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('s', 'n'))): '2ins1',
+    (('e', ('r',)), ('e', ('r',))): '2i',
+    ((('e', ('r',)), ('e', ('r',))), "s0"): '2is0',
 
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '3i',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('s',))): '3is1',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('s', 'n'))): '3ins1',
+    (('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '3i',
+    ((('e', ('r',)), ('e', ('r',)), ('e', ('r',))), "s0"): '3is0',
 
-                   ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
-                   ((('e', ('r',)), ('e', ('r',)), ('e', ('s',))), ('r',)): 'ips1',
-                   ((('e', ('r',)), ('e', ('r',)), ('e', ('s', 'n'))), ('r',)): 'ipns1',
-                   (((('e', ('r',)), ('e', ('r',))), ('r',)), ('e', ('s',))): 'ips2',
-                   (((('e', ('r',)), ('e', ('r',))), ('r',)), ('e', ('s', 'n'))): 'ipns2',
-                   (((('e', ('r',)), ('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('s',))): 'ips12',
-                   (((('e', ('r',)), ('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('s', 'n'))): 'ipns12',
+    ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
+    (((('e', ('r',)), ('e', ('r',))), ('r',)), "s1"): 'ips1',
 
-                   (('e', ('r', 'r')), ('e', ('r',))): 'pi',
-                   (((('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('r',))): 'pis1',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('r',))): 'pins1',
-                   (('e', ('r', 'r')), ('e', ('r',)), ('e', ('s',))): 'pis2',
-                   (('e', ('r', 'r')), ('e', ('r',)), ('e', ('s', 'n'))): 'pins2',
-                   (((('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('r',)), ('e', ('s',))): 'pis12',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('r',)), ('e', ('s', 'n'))): 'pins12',
+    (('e', ('r', 'r')), ('e', ('r',))): 'pi',
+    ((('e', ('r', 'r')), ('e', ('r',))), "s1"): 'pis1',
 
-                   (('e', ('r',)), ('e', ('r', 'n'))): '2in',
-                   (('e', ('r',)), ('e', ('r', 'n')), ('e', ('s',))): '2ins1',
-                   (('e', ('r',)), ('e', ('r', 'n')), ('e', ('s', 'n'))): '2inns1',
+    (('e', ('r',)), ('e', ('r', 'n'))): '2in',
+    ((('e', ('r',)), ('e', ('r', 'n'))), "s0"): '2ins0',
 
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))): '3in',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n')), ('e', ('s',))): '3ins1',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n')), ('e', ('s', 'n'))): '3inns1',
+    (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))): '3in',
+    ((('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))), "s0"): '3ins0',
 
-                   ((('e', ('r',)), ('e', ('r', 'n'))), ('r',)): 'inp',
-                   ((('e', ('r',)), ('e', ('r', 'n')), ('e', ('s',))), ('r',)): 'inps1',
-                   ((('e', ('r',)), ('e', ('r', 'n')), ('e', ('s', 'n'))), ('r',)): 'inpns1',
-                   (((('e', ('r',)), ('e', ('r', 'n'))), ('r',)), ('e', ('s',))): 'inps2',
-                   (((('e', ('r',)), ('e', ('r', 'n'))), ('r',)), ('e', ('s', 'n'))): 'inpns2',
-                   (((('e', ('r',)), ('e', ('r', 'n')), ('e', ('s',))), ('r',)), ('e', ('s',))): 'inps12',
-                   (((('e', ('r',)), ('e', ('r', 'n')), ('e', ('s', 'n'))), ('r',)), ('e', ('s', 'n'))): 'inpns12',
+    ((('e', ('r',)), ('e', ('r', 'n'))), ('r',)): 'inp',
+    (((('e', ('r',)), ('e', ('r', 'n'))), ('r',)), "s1"): 'inps1',
 
-                   (('e', ('r', 'r')), ('e', ('r', 'n'))): 'pin',
-                   (((('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('r', 'n'))): 'pins1',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('r', 'n'))): 'pinns1',
-                   (('e', ('r', 'r')), ('e', ('r', 'n')), ('e', ('s',))): 'pins2',
-                   (('e', ('r', 'r')), ('e', ('r', 'n')), ('e', ('s', 'n'))): 'pinns2',
-                   (((('e', ('r',)), ('e', ('s',))), ('r',)), ('e', ('r', 'n')), ('e', ('s',))): 'pins12',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r',)), ('e', ('r', 'n')), ('e', ('s', 'n'))): 'pinns12',
+    (('e', ('r', 'r')), ('e', ('r', 'n'))): 'pin',
+    ((('e', ('r', 'r')), ('e', ('r', 'n'))), "s1"): 'pins1',
 
-                   (('e', ('r', 'r', 'n')), ('e', ('r',))): 'pni',
-                   (((('e', ('r',)), ('e', ('s',))), ('r', 'n')), ('e', ('r',))): 'pnis1',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r', 'n')), ('e', ('r',))): 'pnins1',
-                   (('e', ('r', 'r', 'n')), ('e', ('r',)), ('e', ('s',))): 'pnis2',
-                   (('e', ('r', 'r', 'n')), ('e', ('r',)), ('e', ('s', 'n'))): 'pnins2',
-                   (((('e', ('r',)), ('e', ('s',))), ('r', 'n')), ('e', ('r',)), ('e', ('s',))): 'pnis12',
-                   (((('e', ('r',)), ('e', ('s', 'n'))), ('r', 'n')), ('e', ('r',)), ('e', ('s', 'n'))): 'pnins12',
+    (('e', ('r', 'r', 'n')), ('e', ('r',))): 'pni',
+    ((('e', ('r', 'r', 'n')), ('e', ('r',))), "s1"): 'pnis1',
 
-                   (('e', ('r',)), ('e', ('r',)), ('u',)): '2u-DNF',
-                   ((('e', ('r',)), ('e', ('r',)), ('u',)), ('e', ('s',))): '2us1-DNF',
-                   ((('e', ('r',)), ('e', ('r',)), ('u',)), ('e', ('s', 'n'))): '2uns1-DNF',
+    (('e', ('r',)), ('e', ('r',)), ('u',)): '2u-DNF',
+    ((('e', ('r',)), ('e', ('r',)), ('u',)), "s0"): '2u-DNFs0',
 
-                   ((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)): 'up-DNF',
-                   (((('e', ('r',)), ('e', ('r',)), ('u',)), ('e', ('s',))), ('r',)): 'ups1-DNF',
-                   (((('e', ('r',)), ('e', ('r',)), ('u',)), ('e', ('s', 'n'))), ('r',)): 'upns1-DNF',
-                   (((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)), ('e', ('s',))): 'ups2-DNF',
-                   (((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)), ('e', ('s', 'n'))): 'upns2-DNF',
-                   ((((('e', ('r',)), ('e', ('r',)), ('u',)), ('e', ('s',))), ('r',)), ('e', ('s',))): 'ups12-DNF',
-                   ((((('e', ('r',)), ('e', ('r',)), ('u',)), ('e', ('s', 'n'))), ('r',)), ('e', ('s', 'n'))): 'upns12-DNF',
+    ((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)): 'up-DNF',
+    (((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)), "s1"): 'up-DNFs1',
 
-                   ('e', ('r', 'r', 'r', 'r')): '4p',
-                   ('e', ('r', 'r', 'r', 'r', 'r')): '5p',
-                   (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '4i',
-                   ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n',)): '2u-DM',
-                   ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n', 'r')): 'up-DM',
-                   }
+    ('e', ('r', 'r', 'r', 'r')): '4p',
+    ('e', ('r', 'r', 'r', 'r', 'r')): '5p',
+    (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '4i',
+    ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n',)): '2u-DM',
+    ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n', 'r')): 'up-DM',
+}
 name_answer_dict = {'1p': ['e', ['r',], 'e'],
                     '2p': ['e', ['r', 'e', 'r'], 'e'],
                     '3p': ['e', ['r', 'e', 'r', 'e', 'r'], 'e'],
@@ -178,10 +132,12 @@ def parse_args(args=None):
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
     parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"], help="preference type")
+    parser.add_argument("--preference_mode", default="target", choices=["target, full"],
+                        help="target evaluates preferences on target variable, full includes intermediate variables")
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'score'],
+                        choices=['default', 'random', 'greedy', 'cosine', 'cosine_mean', 'ranknet', 'nqr', 'score'],
                         help='reranker method')
     parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
@@ -428,7 +384,6 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     all_metrics = defaultdict(float)
     results = defaultdict(list)
     reranked_delta = defaultdict(lambda: defaultdict(list))
-    session_count = 0
 
     use_mean_cosine = args.reranker == "cosine_mean"
 
@@ -452,13 +407,18 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         if evaluate_preferences:
             query_easy_answers = list(easy_answers[queries[0]])
             query_hard_answers = list(hard_answers[queries[0]])
+
             for pos_id, variable_position_sessions in enumerate(sessions):
+                if args.preference_mode == "target" and pos_id < (len(sessions) - 1):
+                    continue
+                # Some queries have no sessions in some positions
+                if len(variable_position_sessions) == 0:
+                    continue
+
                 query_cumulative_metrics = defaultdict(float)
                 base_metrics = dict(initial_metrics)
-                for session in variable_position_sessions:
-                    session_count += 1
-                    # session_scores = scores.clone()
 
+                for session in variable_position_sessions:
                     positives, negatives, pos_implicit_answers, neg_implicit_answers = session
 
                     # relevance: 0 = unknown/incorrect, 1 = hard (less preferred), 2 = hard (preferred)
@@ -466,11 +426,9 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     relevance_scores[neg_implicit_answers] = 1
                     relevance_scores[pos_implicit_answers] = 2
 
-                    # Remove easy answers from evaluation (known in the graph)
-                    easy_mask = torch.zeros_like(scores, dtype=torch.bool)
-                    easy_mask[positives] = True
-                    easy_mask[negatives] = True
-                    keep_mask = ~easy_mask
+                    # Remove easy answers from NDCG evaluation (known in the graph)
+                    keep_mask = torch.ones_like(scores, dtype=torch.bool)
+                    keep_mask[query_easy_answers] = False
 
                     assert torch.all(relevance_scores[query_hard_answers] >= 1)
                     assert torch.all(keep_mask[query_hard_answers])
@@ -480,7 +438,6 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     scores_eval = scores[keep_mask].unsqueeze(0).cpu()
 
                     base_metrics.update(compute_ndcg(rel_eval, scores_eval))
-
 
                     if preference == "positive":
                         session_feedback = positives[:10]
@@ -494,7 +451,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         pos_labels = [1] * len(pos_feedback)
                         neg_labels = [0] * len(neg_feedback)
 
-                        session_feedback = [i for pair in zip(positives[:5], negatives[:5]) for i in pair]
+                        session_feedback = [i for pair in zip(pos_feedback, neg_feedback) for i in pair]
                         session_labels = [i for pair in zip(pos_labels, neg_labels) for i in pair]
 
                     cumulative_metrics = defaultdict(float)
@@ -564,7 +521,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 for metric, value in query_cumulative_metrics.items():
                     base_metrics[f"cumulative_{metric}"] = value / len(variable_position_sessions)
 
-                results[(query_structures[0], "s0")].append(base_metrics)
+                results[(query_structures[0], f"s{pos_id}")].append(base_metrics)
         else:
             results[query_structures[0]].append(initial_metrics)
 
