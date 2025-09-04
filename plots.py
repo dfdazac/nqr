@@ -66,8 +66,8 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
 
-        if title == "Pairwise Accuracy":
-            ax.set_ylim([0.5, 1])
+        # if title == "Pairwise Accuracy":
+        #     ax.set_ylim([0, 1])
 
     # Add legend with correct colors
     legend_patches = [
@@ -82,13 +82,21 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.savefig(output_filename)
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756897770_gbeqpegp"),
-    ("SumCosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1756898617_k4r7s7ju"),
-    ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756898251_18i57f16"),
-    ("SCORE-logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756929438_bcfcciqq"),
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756994880_t93tul5x"),
+    ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756995459_0g59drli"),
+    ("SCORE", "results/fb15k237-betae_10_0.0002_score_test_mixed_1756995091_9nmoqtdc")
 ]),
-output_filename="fb15k237v2_1p_over_time_fixed_ndcg.pdf"
+output_filename="fb15k237v2_2p.pdf"
 )
+
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756897770_gbeqpegp"),
+#     ("SumCosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1756898617_k4r7s7ju"),
+#     ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756898251_18i57f16"),
+#     ("SCORE-logit", "results/fb15k237-betae_10_0.0002_logit_test_mixed_1756929438_bcfcciqq"),
+# ]),
+# output_filename="fb15k237v2_1p_over_time_fixed_ndcg.pdf"
+# )
 # plot_metrics_comparison(OrderedDict([
 #     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy/metrics_over_time_test_mixed.pkl"),
 #     # ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1746902660_jsqnodzr/metrics_over_time_test_mixed.pkl"),
