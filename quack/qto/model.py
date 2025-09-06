@@ -349,7 +349,7 @@ class KGReasoning(nn.Module):
         scores[preferences[labels == 0]] = min_score - 1
         return scores
 
-    def rerank_cosine(self, scores, preferences, labels, alpha_p, alpha_n, mean=False):
+    def rerank_cosine(self, scores, preferences, labels, alpha=0.3, beta=0.0, mean=False):
         similarities = self.kbc_model.compute_similarities(preferences)
 
         if not mean:
@@ -366,7 +366,10 @@ class KGReasoning(nn.Module):
             if neg_labels_mask.sum().item() > 0:
                 negative_similarities = -similarities[neg_labels_mask].mean(dim=0)
 
-        scores = scores * alpha_p + positive_similarities * (1 - alpha_p) + scores * alpha_n + negative_similarities * (1 - alpha_n)
+        w_p = (1 + beta) / 2.0
+        w_n = (1 - beta) / 2.0
+        preference_sctores = w_p * positive_similarities + w_n * negative_similarities
+        scores = alpha * scores + (1.0 - alpha) * preference_sctores
 
         return scores
 

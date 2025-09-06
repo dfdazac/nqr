@@ -112,8 +112,8 @@ def parse_args(args=None):
                         type=str,
                         choices=['default', 'random', 'greedy', 'cosine', 'cosine_mean', 'ranknet', 'nqr', 'score'],
                         help='reranker method')
-    parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
-    parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
+    parser.add_argument('--alpha', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
+    parser.add_argument('--beta', default=0.0, type=float, help="Alpha_n parameter for the cosine similarity reranker")
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
@@ -443,7 +443,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         if args.reranker == "default":
                             session_scores = scores
                         elif args.reranker in ("cosine", "cosine_mean"):
-                            session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
+                            session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta, use_mean_cosine)
                         elif args.reranker in ("ranknet", "nqr"):
                             session_scores = model.rerank_nqr(scores, preferences, labels)
                         elif args.reranker == "score":
