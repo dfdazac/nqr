@@ -82,11 +82,11 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
     plt.savefig(output_filename)
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1756994880_t93tul5x"),
-    ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756995459_0g59drli"),
-    ("SCORE", "results/fb15k237-betae_10_0.0002_score_test_mixed_1756995091_9nmoqtdc")
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1757142798_zr9p5bjn"),
+    # ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1756995459_0g59drli"),
+    ("SCORE", "results/fb15k237-betae_10_0.0002_score_test_mixed_1757142231_sr4223t1")
 ]),
-output_filename="fb15k237v2_2p.pdf"
+output_filename="fb15k237v2_pni.pdf"
 )
 
 # plot_metrics_comparison(OrderedDict([

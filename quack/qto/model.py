@@ -56,6 +56,8 @@ def neural_adj_matrix(model, rel, nentity, device, thrshd, adj_list):
     return relation_embedding
 
 class KGReasoning(nn.Module):
+    ATOMIC_SUBQUERIES = {('e', ('r',)), ('e', ('r', 'n'))}
+
     def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, preference_embedding="mean", num_layers=2, activation="relu", margin=0.1):
         super(KGReasoning, self).__init__()
         self.nentity = args.nentity
@@ -168,45 +170,96 @@ class KGReasoning(nn.Module):
     def union(self, embeddings):
         return (1. - torch.prod(1.-embeddings, dim=0))
 
-    def embed_query(self, queries, query_structure, idx):
-        '''
-        Iterative embed a batch of queries with same structure
-        queries: a flattened batch of queries
-        '''
+    def _maybe_reweight_pos(self, emb, preference, var_pos, apply_at):
+        """
+        If the just-created logical variable index equals `apply_at`,
+        apply the similarity reweighting. Returns emb (possibly modified).
+        """
+        if preference is None or apply_at is None:
+            return emb
+        if var_pos[0] == apply_at and preference and len(preference) >= 2 and len(preference[0]) > 0:
+            preference_ids, preference_labels = preference
+            emb = self.rerank_score(emb, preference_ids, preference_labels)
+        return emb
+
+    def embed_query(self, queries, query_structure, idx,
+                    preference=None, apply_at=None,
+                    var_pos=None, count_vars=True, will_merge=False):
+        """
+        Embed a batch of queries with the same structure.
+
+        Parameters
+        ----------
+        queries : LongTensor [bsz, ...], flattened tokens
+        query_structure : nested structure (as in your dict) or its flat-consumable form
+        idx : cursor into `queries`
+        preference : tuple/list like ([entities], [weights])
+        apply_at : int, 0-based logical variable index at which to apply `preference`
+        var_pos : mutable [int], counts logical variables created so far
+        count_vars : bool, whether this frame should advance `var_pos` when it
+                     creates a logical variable (False for children of ∩/∪)
+        """
+        if var_pos is None:
+            var_pos = [0]
+
         all_relation_flag = True
         exec_query = []
-        for ele in query_structure[-1]: # whether the current query tree has merged to one branch and only need to do relation traversal, e.g., path queries or conjunctive queries after the intersection
+        for ele in query_structure[-1]:
             if ele not in ['r', 'n']:
                 all_relation_flag = False
                 break
         if all_relation_flag:
+            # Anchor or prefix
             if query_structure[0] == 'e':
                 bsz = queries.size(0)
-                embedding = torch.zeros(bsz, self.nentity).to(torch.float).to(self.device)
+
+                # TODO: Consider a buffer for this tensor
+                embedding = torch.zeros(bsz, self.nentity, dtype=torch.float, device=self.device)
                 embedding.scatter_(-1, queries[:, idx].unsqueeze(-1), 1)
                 exec_query.append(queries[:, idx].item())
                 idx += 1
             else:
-                embedding, idx, pre_exec_query = self.embed_query(queries, query_structure[0], idx)
+                embedding, idx, pre_exec_query = self.embed_query(
+                    queries, query_structure[0], idx,
+                    preference, apply_at, var_pos, count_vars
+                )
                 exec_query.append(pre_exec_query)
+
+            # Follow relations (and negations if present)
             r_exec_query = []
-            for i in range(len(query_structure[-1])):
-                if query_structure[-1][i] == 'n':
+            i = 0
+            while i < len(query_structure[-1]):
+                sym = query_structure[-1][i]
+                if sym == 'n':
                     assert (queries[:, idx] == -2).all()
                     r_exec_query.append('n')
-                else:
-                    r_embedding = self.relation_embeddings[queries[0, idx]]
-                    if (i < len(query_structure[-1]) - 1) and query_structure[-1][i+1] == 'n':
-                        embedding, r_argmax = self.relation_projection(embedding, r_embedding, True)
-                    else:
-                        embedding, r_argmax = self.relation_projection(embedding, r_embedding, False)
-                    r_exec_query.append((queries[0, idx].item(), r_argmax))
-                    r_exec_query.append('e')
+                    idx += 1
+                    i += 1
+                    continue
+
+                # relation token
+                r_embedding = self.relation_embeddings[queries[0, idx]]
+                negate_next = (i + 1 < len(query_structure[-1]) and query_structure[-1][i + 1] == 'n')
+                embedding, r_argmax = self.relation_projection(embedding, r_embedding, negate_next)
+
+                # A path projection creates one logical variable, unless it will later be merged
+                # (e.g. in an intersection or disjunction, in which case we skip the last step)
+                query_tail = [sym for sym in query_structure[-1] if sym != 'n']
+                if count_vars and (not will_merge or i < len(query_tail) - 1):
+                    embedding = self._maybe_reweight_pos(embedding, preference, var_pos, apply_at)
+                    var_pos[0] += 1  # advance logical variable index
+
+                r_exec_query.append((queries[0, idx].item(), r_argmax))
+                r_exec_query.append('e')
                 idx += 1
-            r_exec_query.pop()
+                i += 1
+
+            r_exec_query.pop()  # trailing 'e'
             exec_query.append(r_exec_query)
             exec_query.append('e')
+
         else:
+            # Branching: detect union sentinel
             embedding_list = []
             union_flag = False
             for ele in query_structure[-1]:
@@ -214,16 +267,32 @@ class KGReasoning(nn.Module):
                     union_flag = True
                     query_structure = query_structure[:-1]
                     break
-            for i in range(len(query_structure)):
-                embedding, idx, pre_exec_query = self.embed_query(queries, query_structure[i], idx)
-                embedding_list.append(embedding)
+
+            # Children should NOT advance logical var count (∩/∪ yields ONE variable)
+            # unless there are paths inside
+            for sub in query_structure:
+                is_atomic_query = sub in self.ATOMIC_SUBQUERIES
+                emb_i, idx, pre_exec_query = self.embed_query(
+                    queries, sub, idx,
+                    preference, apply_at, var_pos,
+                    count_vars=not is_atomic_query,
+                    will_merge=True
+                )
+                embedding_list.append(emb_i)
                 exec_query.append(pre_exec_query)
+
+            # Combine → creates exactly one logical variable
             if union_flag:
                 embedding = self.union(torch.stack(embedding_list))
-                idx += 1
+                idx += 1  # consume union marker token
                 exec_query.append(['u'])
             else:
                 embedding = self.intersection(torch.stack(embedding_list))
+
+            if count_vars:
+                embedding = self._maybe_reweight_pos(embedding, preference, var_pos, apply_at)
+                var_pos[0] += 1  # advance after producing the combined variable
+
             exec_query.append('e')
 
         return embedding, idx, exec_query

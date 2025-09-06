@@ -25,46 +25,19 @@ print(  )
 
 query_name_dict = {
     ('e', ('r',)): '1p',
-    (('e', ('r',)), "s0"): '1ps0',
-
     ('e', ('r', 'r')): '2p',
-    (('e', ('r', 'r')), "s1"): '2ps1',
-
     ('e', ('r', 'r', 'r')): '3p',
-    (('e', ('r', 'r', 'r')), "s2"): '3ps2',
-
     (('e', ('r',)), ('e', ('r',))): '2i',
-    ((('e', ('r',)), ('e', ('r',))), "s0"): '2is0',
-
     (('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '3i',
-    ((('e', ('r',)), ('e', ('r',)), ('e', ('r',))), "s0"): '3is0',
-
     ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
-    (((('e', ('r',)), ('e', ('r',))), ('r',)), "s1"): 'ips1',
-
     (('e', ('r', 'r')), ('e', ('r',))): 'pi',
-    ((('e', ('r', 'r')), ('e', ('r',))), "s1"): 'pis1',
-
     (('e', ('r',)), ('e', ('r', 'n'))): '2in',
-    ((('e', ('r',)), ('e', ('r', 'n'))), "s0"): '2ins0',
-
     (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))): '3in',
-    ((('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))), "s0"): '3ins0',
-
     ((('e', ('r',)), ('e', ('r', 'n'))), ('r',)): 'inp',
-    (((('e', ('r',)), ('e', ('r', 'n'))), ('r',)), "s1"): 'inps1',
-
     (('e', ('r', 'r')), ('e', ('r', 'n'))): 'pin',
-    ((('e', ('r', 'r')), ('e', ('r', 'n'))), "s1"): 'pins1',
-
     (('e', ('r', 'r', 'n')), ('e', ('r',))): 'pni',
-    ((('e', ('r', 'r', 'n')), ('e', ('r',))), "s1"): 'pnis1',
-
     (('e', ('r',)), ('e', ('r',)), ('u',)): '2u-DNF',
-    ((('e', ('r',)), ('e', ('r',)), ('u',)), "s0"): '2u-DNFs0',
-
     ((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)): 'up-DNF',
-    (((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)), "s1"): 'up-DNFs1',
 
     ('e', ('r', 'r', 'r', 'r')): '4p',
     ('e', ('r', 'r', 'r', 'r', 'r')): '5p',
@@ -132,7 +105,7 @@ def parse_args(args=None):
     parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
 
     parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"], help="preference type")
-    parser.add_argument("--preference_mode", default="target", choices=["target, full"],
+    parser.add_argument("--preference_mode", default="target", choices=["target", "full"],
                         help="target evaluates preferences on target variable, full includes intermediate variables")
     parser.add_argument('--reranker',
                         default='nqr',
@@ -391,6 +364,9 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
     total_metrics_over_10_steps = defaultdict(list)
     query_to_ranking = defaultdict(dict)
+
+    processed_query_count = 0
+
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} - preference: {preference}", mininterval=1):
         sessions = sessions[0]
         if evaluate_preferences and len(sessions) == 0:
@@ -405,12 +381,14 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             query_to_ranking[query_name_dict[query_structures[0]]][queries[0]] = scores.tolist()
 
         if evaluate_preferences:
+            processed_query_count += 1
             query_easy_answers = list(easy_answers[queries[0]])
             query_hard_answers = list(hard_answers[queries[0]])
 
             for pos_id, variable_position_sessions in enumerate(sessions):
                 if args.preference_mode == "target" and pos_id < (len(sessions) - 1):
                     continue
+
                 # Some queries have no sessions in some positions
                 if len(variable_position_sessions) == 0:
                     continue
@@ -453,6 +431,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
                         session_feedback = [i for pair in zip(pos_feedback, neg_feedback) for i in pair]
                         session_labels = [i for pair in zip(pos_labels, neg_labels) for i in pair]
+                    else:
+                        raise ValueError(f"Unknown preference type {preference}")
 
                     cumulative_metrics = defaultdict(float)
                     metrics_over_10_steps = defaultdict(list)
@@ -464,14 +444,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                             session_scores = scores
                         elif args.reranker in ("cosine", "cosine_mean"):
                             session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
-                        elif args.reranker == "random":
-                            session_scores = model.rerank_random(scores, preferences, labels)
-                        elif args.reranker == "greedy":
-                            session_scores = model.rerank_greedy(scores, preferences, labels)
                         elif args.reranker in ("ranknet", "nqr"):
                             session_scores = model.rerank_nqr(scores, preferences, labels)
                         elif args.reranker == "score":
-                            session_scores = model.rerank_score(scores, preferences, labels)
+                            session_scores, *_ = model.embed_query(flat_queries, query_structures[0], 0,
+                                                               preference=(preferences, labels),
+                                                               apply_at=pos_id)
+                            session_scores = session_scores.squeeze()
                         else:
                             raise ValueError(f"Unknown reranker {args.reranker}")
 
@@ -521,7 +500,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 for metric, value in query_cumulative_metrics.items():
                     base_metrics[f"cumulative_{metric}"] = value / len(variable_position_sessions)
 
-                results[(query_structures[0], f"s{pos_id}")].append(base_metrics)
+                sim_query_structure = (query_structures[0], f"s{pos_id}")
+                if sim_query_structure not in query_name_dict:
+                    query_name_dict[sim_query_structure] = f"{query_name_dict[query_structures[0]]}s{pos_id}"
+                results[sim_query_structure].append(base_metrics)
+
+            if args.test_run and processed_query_count == 10:
+                break
         else:
             results[query_structures[0]].append(initial_metrics)
 
@@ -620,6 +605,9 @@ def evaluate_split(args, tasks, split, model, query_name_dict, device, output_pa
 
 
 def main(args):
+    if args.preference_mode != "target" and args.reranker in ("ranknet", "nqr"):
+        raise ValueError(f"{args.reranker} only supports target mode")
+    
     set_global_seed(args.seed)
     tasks = args.tasks.split('.')
     device = "cuda" if torch.cuda.is_available() else "cpu"
