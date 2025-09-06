@@ -112,8 +112,15 @@ def parse_args(args=None):
                         type=str,
                         choices=['default', 'random', 'greedy', 'cosine', 'cosine_mean', 'ranknet', 'nqr', 'score'],
                         help='reranker method')
+
+    # Cosine hyperparameters
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--beta', default=0.0, type=float, help="Alpha_n parameter for the cosine similarity reranker")
+
+    # SCORE hyperparameters
+    parser.add_argument('--wp', default=1.0, type=float, help="weight for positive preferences")
+    parser.add_argument('--wn', default=1.0, type=float, help="weight for negative preferences")
+
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
@@ -630,7 +637,7 @@ def main(args):
     args.nrelation = num_relations
 
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
-    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation, args.margin)
+    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation, args.margin, args.wp, args.wn)
 
     if args.checkpoint:
         print(f"Loading checkpoint {args.checkpoint}")

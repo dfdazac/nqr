@@ -58,7 +58,8 @@ def neural_adj_matrix(model, rel, nentity, device, thrshd, adj_list):
 class KGReasoning(nn.Module):
     ATOMIC_SUBQUERIES = {('e', ('r',)), ('e', ('r', 'n'))}
 
-    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, preference_embedding="mean", num_layers=2, activation="relu", margin=0.1):
+    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, preference_embedding="mean",
+                 num_layers=2, activation="relu", margin=0.1, wp=1.0, wn=1.0):
         super(KGReasoning, self).__init__()
         self.nentity = args.nentity
         self.nrelation = args.nrelation
@@ -111,6 +112,8 @@ class KGReasoning(nn.Module):
         self.preference_embedding = preference_embedding
         self.num_layers = num_layers
         self.margin = margin
+        self.wp = wp
+        self.wn = wn
         if preference_embedding != "none":
             if activation == "relu":
                 activation_class = nn.ReLU
@@ -373,7 +376,7 @@ class KGReasoning(nn.Module):
 
         return scores
 
-    def rerank_score(self, scores, preferences, labels, *, wp=1.0, wn=1.0, eps=1e-6):
+    def rerank_score(self, scores, preferences, labels, *, eps=1e-6):
         """
         Additive-evidence reranker.
         - scores: base scores in [0,1] (probabilities). If not, pass through a sigmoid first.
@@ -396,9 +399,9 @@ class KGReasoning(nn.Module):
         # 3) Add log-odds evidence
         delta = torch.zeros_like(scores)
         if pos.numel():
-            delta = delta + wp * torch.logit(pos).mean(dim=0)  # favors high sim to P
+            delta = delta + self.wp * torch.logit(pos).mean(dim=0)  # favors high sim to P
         if neg.numel():
-            delta = delta + wn * torch.logit(1.0 - neg).mean(dim=0)  # penalizes high sim to N
+            delta = delta + self.wn * torch.logit(1.0 - neg).mean(dim=0)  # penalizes high sim to N
 
         # 5) Back to probabilities; monotone in the base score
         return torch.sigmoid(logits + delta)
