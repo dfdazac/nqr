@@ -649,7 +649,7 @@ def main(args):
         folder_name += "_valid"
     if args.do_test:
         folder_name += "_test"
-    folder_name += f"_{args.preference}_{int(time.time())}"
+    folder_name += f"_{args.preference}_{args.preference_mode}_{int(time.time())}"
 
     # Initialize wandb early to get run ID
     wandb.init(project="score", mode='online' if args.wandb else 'disabled', notes=args.notes)
