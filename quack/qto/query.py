@@ -454,10 +454,15 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         elif args.reranker in ("ranknet", "nqr"):
                             session_scores = model.rerank_nqr(scores, preferences, labels)
                         elif args.reranker == "score":
-                            session_scores, *_ = model.embed_query(flat_queries, query_structures[0], 0,
-                                                               preference=(preferences, labels),
-                                                               apply_at=pos_id)
-                            session_scores = session_scores.squeeze()
+                            # Recomputing the whole query again is only required for queries with intermediate variables
+                            # and when feedback on them is provided
+                            if len(sessions) > 1 and pos_id < (len(sessions) - 1):
+                                session_scores, *_ = model.embed_query(flat_queries, query_structures[0], 0,
+                                                                       preference=(preferences, labels),
+                                                                       apply_at=pos_id)
+                                session_scores = session_scores.squeeze()
+                            else:
+                                session_scores = model.rerank_score(scores, preferences, labels)
                         else:
                             raise ValueError(f"Unknown reranker {args.reranker}")
 
