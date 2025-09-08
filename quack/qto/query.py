@@ -339,12 +339,12 @@ def train(model, args, tasks, device, output_path):
                 batch_answer_losses = []
 
         train_bar.close()
-        if epoch % args.valid_frequency == 0:
-            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", preference="mixed")
-            wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
-
-    all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test", preference="mixed")
-    wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+    #     if epoch % args.valid_frequency == 0:
+    #         all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", preference="mixed")
+    #         wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+    #
+    # all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test", preference="mixed")
+    # wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
