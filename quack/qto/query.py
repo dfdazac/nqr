@@ -268,23 +268,29 @@ def train(model, args, tasks, device, output_path):
             batch_preferences = []
             batch_labels = []
             num_preferences = random.randint(1, 10)
-            for i in range(args.batch_size):
+            i = 0
+            while len(batch_scores) < args.batch_size:
                 try:
                     flat_queries, queries, query_structures, sessions = next(iterator)
                 except StopIteration:
                     finished = True
                     break
 
+                # We only train with queries that have a preference in the target position
+                sessions = sessions[0][-1]
+                if len(sessions) == 0:
+                    continue
+
                 flat_queries = torch.tensor(flat_queries, device=device)
                 scores, *_ = model.embed_query(flat_queries, query_structures[0], 0)
                 batch_scores.append(scores)
 
                 # Pick a random session
-                positives, negatives = random.choice(sessions[0])
-                batch_positives.extend(positives)
-                batch_positive_ids.extend([i] * len(positives))
-                batch_negatives.extend(negatives)
-                batch_negative_ids.extend([i] * len(negatives))
+                positives, negatives, pos_implicit_answers, neg_implicit_answers = random.choice(sessions)
+                batch_positives.extend(pos_implicit_answers)
+                batch_positive_ids.extend([i] * len(pos_implicit_answers))
+                batch_negatives.extend(neg_implicit_answers)
+                batch_negative_ids.extend([i] * len(neg_implicit_answers))
 
                 # Pick a random mix of positive and negative feedback and cap it at num_preferences
                 combined = [(item, 1) for item in positives] + [(item, 0) for item in negatives]
@@ -293,6 +299,7 @@ def train(model, args, tasks, device, output_path):
 
                 batch_preferences.append(torch.tensor(preferences, device=device))
                 batch_labels.append(torch.tensor(labels, device=device))
+                i += 1
 
             if len(batch_scores) == 0:
                 break
