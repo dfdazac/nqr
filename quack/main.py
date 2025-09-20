@@ -320,15 +320,21 @@ def describe(args: Arguments):
     each split.
     """
     def print_row(label, data):
-        print(f"{label:>12}", end="")
-        for d in data:
-            if type(d) == str:
-                print(f"{d:>8} & ", end="")
+        print(f"{label:>12} & ", end="")
+        for i, d in enumerate(data):
+
+            if i == len(data) - 1:
+                end = " \\\\\n"
             else:
-                print(f"{d:>8,} & ", end="")
-        print()
+                end = " & "
+            if type(d) == str:
+                print(f"{d:>8}", end=end)
+            else:
+                print(f"{d:>8,}", end=end)
 
     print(f"Loading data from {args.data_path}")
+
+    tasks_list = args.tasks.split(".")
 
     splits = ["train", "valid", "test"]
     for split in splits:
@@ -347,40 +353,62 @@ def describe(args: Arguments):
         max_answers = dict()
         avg_answers = dict()
         structures = []
-        for structure in query_name_dict:
-            if structure not in structure_to_queries:
+        
+        # Iterate through tasks_list to preserve order and include empty columns
+        for task_name in tasks_list:
+            # Find the structure corresponding to this task name
+            structure = None
+            for struct, name in query_name_dict.items():
+                if name == task_name:
+                    structure = struct
+                    break
+            
+            if structure is None:
                 continue
+                
             structures.append(structure)
-            queries = structure_to_queries[structure]
-
-            num_queries = len(queries)  # total queries for this structure
-            num_pref_queries = 0        # queries in query_to_sessions
-            num_sessions = 0
-            max_num_answers = 0
-            total_num_answers = 0
-            num_counted = 0
-            for query in queries:
-                if query in query_to_sessions:
-                    num_pref_queries += 1
-                    num_sessions += sum(map(len, query_to_sessions[query]))
-                # Compute max and avg number of answers for this structure
-                if query in answers:
-                    num_ans = len(answers[query])
-                    total_num_answers += num_ans
-                    num_counted += 1
-                    if num_ans > max_num_answers:
-                        max_num_answers = num_ans
-            query_count[structure] = num_queries
-            pref_query_count[structure] = num_pref_queries
-            session_count[structure] = num_sessions
-            max_answers[structure] = max_num_answers
-            avg_answers[structure] = (total_num_answers / num_counted) if num_counted > 0 else 0
+            
+            # Check if we have data for this structure
+            if structure in structure_to_queries:
+                queries = structure_to_queries[structure]
+                num_queries = len(queries)  # total queries for this structure
+                num_pref_queries = 0        # queries in query_to_sessions
+                num_sessions = 0
+                max_num_answers = 0
+                total_num_answers = 0
+                num_counted = 0
+                for query in queries:
+                    if query in query_to_sessions:
+                        num_pref_queries += 1
+                        num_sessions += sum(map(len, query_to_sessions[query]))
+                    # Compute max and avg number of answers for this structure
+                    if query in answers:
+                        num_ans = len(answers[query])
+                        total_num_answers += num_ans
+                        num_counted += 1
+                        if num_ans > max_num_answers:
+                            max_num_answers = num_ans
+                query_count[structure] = num_queries
+                pref_query_count[structure] = num_pref_queries
+                session_count[structure] = num_sessions
+                max_answers[structure] = max_num_answers
+                avg_answers[structure] = (total_num_answers / num_counted) if num_counted > 0 else 0
+            else:
+                # No data for this structure, set all values to 0
+                query_count[structure] = 0
+                pref_query_count[structure] = 0
+                session_count[structure] = 0
+                max_answers[structure] = 0
+                avg_answers[structure] = 0.0
 
         query_count["Total"] = sum(query_count.values())
         pref_query_count["Total"] = sum(pref_query_count.values())
         session_count["Total"] = sum(session_count.values())
-        max_answers["Total"] = max(max_answers.values()) if max_answers else 0
-        avg_answers["Total"] = (sum(avg_answers[s] * (len(structure_to_queries[s]) if s in structure_to_queries else 0) for s in structures[:-1]) / sum(len(structure_to_queries[s]) for s in structures[:-1]) ) if structures[:-1] else 0
+        max_answers["Total"] = max(max_answers.values()) if max_answers.values() and any(v > 0 for v in max_answers.values()) else 0
+        # Calculate weighted average for total, only considering structures with data
+        total_weighted_sum = sum(avg_answers[s] * query_count[s] for s in structures if query_count[s] > 0)
+        total_query_count = sum(query_count[s] for s in structures if query_count[s] > 0)
+        avg_answers["Total"] = (total_weighted_sum / total_query_count) if total_query_count > 0 else 0
 
         # structures = list(structure_to_queries.keys())
         structure_names = [query_name_dict[s] for s in structures] + ["Total"]
@@ -389,11 +417,11 @@ def describe(args: Arguments):
         # cell_divider = "-" * 10
         # print_row(cell_divider, [cell_divider for _ in structures])
         print_row("Structure", structure_names)
-        print_row("Queries", [query_count[s] for s in structures])
-        print_row("PrefQueries", [pref_query_count[s] for s in structures])
-        print_row("Sessions", [session_count[s] for s in structures])
-        print_row("MaxAns", [max_answers[s] for s in structures])
-        print_row("AvgAns", [f"{avg_answers[s]:.2f}" for s in structures])
+        # print_row("Queries", [query_count[s] for s in structures])
+        print_row("Queries", [pref_query_count[s] for s in structures])
+        print_row("Pref. Sets", [session_count[s] for s in structures])
+        # print_row("MaxAns", [max_answers[s] for s in structures])
+        # print_row("AvgAns", [f"{avg_answers[s]:.2f}" for s in structures])
         print()
 
 
