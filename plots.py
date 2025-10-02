@@ -121,23 +121,33 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str) 
 # )
 
 
-plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1753787312_xfap9fmm/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1753788498_kap9hof5/metrics_over_time_test_mixed.pkl"),
-    ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1753808561_mttz7eyf/metrics_over_time_test_mixed.pkl"),
-    ("RankNet", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1753866499_meiyxexn/metrics_over_time_test_mixed.pkl"),
-    ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1753815886_7l1mtfux/metrics_over_time_test_mixed.pkl")
-]),
-output_filename="fb15k237_rebuttal.pdf"
-)
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1753787312_xfap9fmm/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.1_0.9_test_mixed_1753788498_kap9hof5/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1753808561_mttz7eyf/metrics_over_time_test_mixed.pkl"),
+#     ("RankNet", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1753866499_meiyxexn/metrics_over_time_test_mixed.pkl"),
+#     ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1753815886_7l1mtfux/metrics_over_time_test_mixed.pkl")
+# ]),
+# output_filename="fb15k237_rebuttal.pdf"
+# )
 
 plot_metrics_comparison(OrderedDict([
-    ("QTO", "results/hetionet_10_0.001_default_test_mixed_1753881598_v92ke4vl/metrics_over_time_test_mixed.pkl"),
-    ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1753909238_efyics4q/metrics_over_time_test_mixed.pkl"),
-    ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1753948455_pciziqbe/metrics_over_time_test_mixed.pkl")
+    ("QTO", "results/fb15k237-betae_10_0.0002_default_test_mixed_1759243768_ylxe4zps/metrics_over_time_test_mixed.pkl"),
+    # ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759244240_tomuhaj1/metrics_over_time_test_mixed.pkl"),
+    # ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759246262_5w14ugfg/metrics_over_time_test_mixed.pkl"),
+    # ("Cosine-mean-f", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759246436_fibvuxuv/metrics_over_time_test_mixed.pkl"),
+    ("MeanCosine-0.5-0.5", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759247239_nqyyi7ts/metrics_over_time_test_mixed.pkl")
 ]),
-output_filename="hetionet_rebuttal.pdf"
+output_filename="fb15k237_1p.pdf"
 )
+
+# plot_metrics_comparison(OrderedDict([
+#     ("QTO", "results/hetionet_10_0.001_default_test_mixed_1753881598_v92ke4vl/metrics_over_time_test_mixed.pkl"),
+#     ("Cosine", "results/hetionet_10_0.001_cosine_0.1_0.9_test_mixed_1753909238_efyics4q/metrics_over_time_test_mixed.pkl"),
+#     ("NQR", "results/hetionet_10_0.001_nqr_0.001_test_mixed_1753948455_pciziqbe/metrics_over_time_test_mixed.pkl")
+# ]),
+# output_filename="hetionet_rebuttal.pdf"
+# )
 
 # /home/daniel/projects/quack/results/fb15k237-betae_10_0.0002_nqr_0.001_test_mixed_1753815886_7l1mtfux
 

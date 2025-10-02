@@ -107,8 +107,11 @@ def parse_args(args=None):
                         type=str,
                         choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'cosine_mean'],
                         help='reranker method')
-    parser.add_argument('--alpha_p', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
-    parser.add_argument('--alpha_n', default=0.5, type=float, help="Alpha_n parameter for the cosine similarity reranker")
+
+    # Cosine hyperparameters
+    parser.add_argument('--alpha', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
+    parser.add_argument('--beta', default=0.0, type=float, help="Alpha_n parameter for the cosine similarity reranker")
+
     parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
     parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
@@ -365,7 +368,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         if evaluate_preferences and len(sessions) == 0:
             raise ValueError("No sessions found for query")
 
-        flat_queries = torch.LongTensor(flat_queries).to(device)
+        flat_queries = torch.as_tensor(flat_queries, device=device, dtype=torch.long)
         scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
         scores = scores.squeeze()
         initial_metrics = compute_metrics(scores, hard_answers, easy_answers, queries)
@@ -374,6 +377,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             query_to_ranking[query_name_dict[query_structures[0]]][queries[0]] = scores.tolist()
 
         query_cumulative_metrics = defaultdict(float)
+        base_metrics = dict(initial_metrics)
 
         if evaluate_preferences:
             query_easy_answers = list(easy_answers[queries[0]])
@@ -384,12 +388,20 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
                 positives, negatives = session
                 relevance_scores = torch.zeros_like(scores, dtype=torch.long)
-                relevance_scores[query_easy_answers] = 1
-                relevance_scores[query_hard_answers] = 1
                 relevance_scores[negatives] = 1
                 relevance_scores[positives] = 2
-                relevance_scores = relevance_scores.unsqueeze(0).cpu()
-                initial_metrics.update(compute_ndcg(relevance_scores, scores.unsqueeze(0).cpu()))
+
+                # Remove easy answers from NDCG evaluation (these are known in the graph)
+                keep_mask = torch.ones_like(scores, dtype=torch.bool)
+                keep_mask[query_easy_answers] = False
+
+                assert torch.all(relevance_scores[query_hard_answers] >= 1)
+                assert torch.all(keep_mask[query_hard_answers])
+
+                # Slice to filtered candidates: hard answers + all remaining unknowns
+                rel_eval = relevance_scores[keep_mask].unsqueeze(0).cpu()
+                scores_eval = scores[keep_mask].unsqueeze(0).cpu()
+                base_metrics.update(compute_ndcg(rel_eval, scores_eval))
 
                 if preference == "positive":
                     session_feedback = positives[:10]
@@ -415,7 +427,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     if args.reranker == "default":
                         session_scores = scores
                     if args.reranker in ("cosine", "cosine_mean"):
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha_p, args.alpha_n, use_mean_cosine)
+                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta, use_mean_cosine)
                     elif args.reranker == "random":
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":
@@ -426,23 +438,23 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     # Compute pairwise accuracy after reranking
                     pos_scores = session_scores[positives].unsqueeze(1)
                     neg_scores = session_scores[negatives].unsqueeze(0)
-                    num_pairs = len(positives) * len(negatives)
-                    pairwise_accuracy = (pos_scores > neg_scores).sum().item() / num_pairs
+                    pairwise_accuracy = (pos_scores > neg_scores).float().mean().item()
                     cumulative_metrics["pairwise_accuracy"] += pairwise_accuracy
 
                     instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
-                    instant_metrics.update(compute_ndcg(relevance_scores, session_scores.unsqueeze(0).cpu()))
+                    scores_eval = session_scores[keep_mask].unsqueeze(0).cpu()
+                    instant_metrics.update(compute_ndcg(rel_eval, scores_eval))
 
                     for metric in instant_metrics:
                         if metric.startswith('num'):
                             continue
-                        absolute_delta = instant_metrics[metric] - initial_metrics[metric]
-                        relative_delta = absolute_delta / (1.0 if initial_metrics[metric] == 0 else initial_metrics[metric])
+                        absolute_delta = instant_metrics[metric] - base_metrics[metric]
+                        relative_delta = absolute_delta / (1.0 if base_metrics[metric] == 0 else base_metrics[metric])
                         cumulative_metrics[f"{metric}"] += instant_metrics[metric]
                         cumulative_metrics[f"{metric}_delta"] += relative_delta
                         if t < 10 <= len(session_feedback):
                             if t == 0:
-                                metrics_over_10_steps[metric].append(initial_metrics[metric])
+                                metrics_over_10_steps[metric].append(base_metrics[metric])
                             metrics_over_10_steps[metric].append(instant_metrics[metric])
                             metrics_over_10_steps[f"{metric}_delta"].append(relative_delta)
 
@@ -466,9 +478,10 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     total_metrics_over_10_steps[metric].append(metrics_over_10_steps[metric])
 
             for metric, value in query_cumulative_metrics.items():
-                initial_metrics[f"cumulative_{metric}"] = value / len(sessions)
-
-        results[query_structures[0]].append(initial_metrics)
+                base_metrics[f"cumulative_{metric}"] = value / len(sessions)
+            results[query_structures[0]].append(base_metrics)
+        else:
+            results[query_structures[0]].append(initial_metrics)
 
     metrics = collections.defaultdict(lambda: collections.defaultdict(int))
     for query_structure in results:
