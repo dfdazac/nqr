@@ -139,7 +139,8 @@ plot_metrics_comparison(OrderedDict([
     ("MeanCosine-0.5-0.5", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759247239_nqyyi7ts/metrics_over_time_test_mixed.pkl"),
     ("NQR-sigm", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760798240_1iyp5vi0/metrics_over_time_test_mixed.pkl"),
     # ("NQR-sigm-long", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760798607_oyafeyma/metrics_over_time_test_mixed.pkl"),
-    ("NQR-kl-1e-3", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760800405_zv2w1wdv/metrics_over_time_test_mixed.pkl")
+    ("NQR-kl-1e-3", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760800405_zv2w1wdv/metrics_over_time_test_mixed.pkl"),
+    ("NQR-kl-1e-3-ln", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760801030_yy3mzsne/metrics_over_time_test_mixed.pkl"),
     # ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760772705_6lc19w8z/metrics_over_time_test_mixed.pkl"),
     # ("NQR-init", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760777657_j06e0bu9/metrics_over_time_test_mixed.pkl"),
     # ("NQR-init-lowlr", "results/fb15k237-betae_10_0.0002_nqr_1e-09_mixed_1760777832_12ka497e/metrics_over_time_test_mixed.pkl"),

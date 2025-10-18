@@ -122,6 +122,7 @@ class KGReasoning(nn.Module):
             # Input: [score, avg_pos_sim, avg_neg_sim, entity_embedding]
             input_dim = 1 + 1 + 1 + embedding_dim
             self.adjust_net = nn.Sequential(
+                nn.LayerNorm(input_dim, elementwise_affine=True),
                 nn.Linear(input_dim, hidden_dim),
                 activation_class(),
                 nn.Linear(hidden_dim, 2),
@@ -130,7 +131,7 @@ class KGReasoning(nn.Module):
 
             # initialize bias so that alpha_p ≈ 0.75 and alpha_n ≈ 0.25
             with torch.no_grad():
-                last_linear = self.adjust_net[2]  # nn.Linear(hidden_dim, 2)
+                last_linear = self.adjust_net[3]  # nn.Linear(hidden_dim, 2)
                 last_linear.bias[0] = inverse_softplus(0.75)
                 last_linear.bias[1] = inverse_softplus(0.25)
                 last_linear.weight.zero_()
