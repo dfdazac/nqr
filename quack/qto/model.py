@@ -392,6 +392,27 @@ class KGReasoning(nn.Module):
 
         return new_in_cluster_scores, in_cluster_deltas
 
+    @staticmethod
+    def _collect_batched_scores(scores, batch_ids, batch_size):
+        device = scores.device
+        batch_ids_range = torch.arange(len(batch_ids), device=device)
+        batch_one_hot = torch.zeros((len(batch_ids), batch_size), dtype=torch.int64, device=device)
+        batch_one_hot[batch_ids_range, batch_ids] = 1
+        sequence_nums = batch_one_hot.cumsum(0) * batch_one_hot
+        sequence_nums = (sequence_nums - 1).clamp(min=0)
+        sequence_nums = sequence_nums[batch_ids_range, batch_ids]
+
+        # Get maximum number of entities per batch
+        max_entities = sequence_nums.max() + 1
+
+        # Create output matrix filled with -1
+        batched_scores = torch.full((batch_size, max_entities), -1e-9, device=device)
+
+        # Fill the matrix with scores
+        batched_scores[batch_ids, sequence_nums] = scores
+
+        return batched_scores
+
     def reranking_loss(self, pref_data, scores, in_cluster_data, out_cluster_data):
         """
         Computes the margin-based loss for reranking.
@@ -440,9 +461,28 @@ class KGReasoning(nn.Module):
 
         preference_loss = self._ranknet_loss(new_in_cluster_scores, new_out_cluster_scores, in_cluster_batch_id, out_cluster_batch_id, batch_size)
 
-        answer_scores = torch.cat([new_in_cluster_scores, new_out_cluster_scores])
-        answer_batch_id = torch.cat([in_cluster_batch_id, out_cluster_batch_id])
-        answer_loss = self._ranknet_loss(answer_scores, new_random_scores, answer_batch_id, random_batch_id, batch_size)
+        if True:
+            in_cluster_scores = scores[in_cluster_batch_id, in_cluster_entities]
+            out_cluster_scores = scores[out_cluster_batch_id, out_cluster_entities]
+            random_scores = scores[random_batch_id, random_entities]
+
+            # Answer loss: preserve global rankings by minimizing KL divergence
+            prev_scores = self._collect_batched_scores(scores=torch.cat([in_cluster_scores, out_cluster_scores, random_scores]),
+                                                       batch_ids=torch.cat([in_cluster_batch_id, out_cluster_batch_id, random_batch_id]),
+                                                       batch_size=batch_size)
+            new_scores = self._collect_batched_scores(
+                scores=torch.cat([new_in_cluster_scores, new_out_cluster_scores, new_random_scores]),
+                batch_ids=torch.cat([in_cluster_batch_id, out_cluster_batch_id, random_batch_id]),
+                batch_size=batch_size)
+            # (batch_size, max_entities), padded with -inf
+            answer_loss = 1e-3 * F.kl_div(input=torch.log_softmax(new_scores, dim=-1),
+                                   target=torch.log_softmax(prev_scores, dim=-1),
+                                   reduction='batchmean',
+                                   log_target=True)
+        else:
+            answer_scores = torch.cat([new_in_cluster_scores, new_out_cluster_scores])
+            answer_batch_id = torch.cat([in_cluster_batch_id, out_cluster_batch_id])
+            answer_loss = self._ranknet_loss(answer_scores, new_random_scores, answer_batch_id, random_batch_id, batch_size)
 
         all_deltas = in_cluster_deltas, out_cluster_deltas, random_deltas
 
