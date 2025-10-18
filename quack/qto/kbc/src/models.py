@@ -502,6 +502,26 @@ class ComplEx(KBCModel):
 
         return torch.abs(similarities)
 
+    def compute_similarities_from_pairs(self, pairs: torch.Tensor) -> torch.Tensor:
+        """Compute N similarities given a pairs tensor of shape (N, 2)"""
+        entity1_emb = self.embeddings[0](pairs[:, 0])  # (N, 2*rank)
+        entity2_emb = self.embeddings[0](pairs[:, 1])  # (N, 2*rank)
+        
+        entity1_real, entity1_imag = torch.chunk(entity1_emb, chunks=2, dim=-1)
+        entity2_real, entity2_imag = torch.chunk(entity2_emb, chunks=2, dim=-1)
+        
+        entity1_complex = entity1_real + 1j * entity1_imag  # (N, rank)
+        entity2_complex = entity2_real + 1j * entity2_imag  # (N, rank)
+        
+        dot_product = torch.sum(entity1_complex * entity2_complex.conj(), dim=1)
+        # Shape: (N,)
+        
+        norm_entity1 = torch.norm(entity1_complex, dim=1, p=2)  # (N,)
+        norm_entity2 = torch.norm(entity2_complex, dim=1, p=2)  # (N,)
+        
+        similarities = dot_product / (norm_entity1 * norm_entity2)
+        
+        return torch.abs(similarities)
 
 class TuckER(KBCModel):
     def __init__(self, sizes, rank_e, rank_r, init_size=1e-3, dp=0.5):

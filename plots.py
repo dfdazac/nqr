@@ -136,7 +136,13 @@ plot_metrics_comparison(OrderedDict([
     # ("MeanCosine", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759244240_tomuhaj1/metrics_over_time_test_mixed.pkl"),
     # ("Cosine-mean", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759246262_5w14ugfg/metrics_over_time_test_mixed.pkl"),
     # ("Cosine-mean-f", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759246436_fibvuxuv/metrics_over_time_test_mixed.pkl"),
-    ("MeanCosine-0.5-0.5", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759247239_nqyyi7ts/metrics_over_time_test_mixed.pkl")
+    ("MeanCosine-0.5-0.5", "results/fb15k237-betae_10_0.0002_cosine_mean_test_mixed_1759247239_nqyyi7ts/metrics_over_time_test_mixed.pkl"),
+    ("NQR-sigm", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760798240_1iyp5vi0/metrics_over_time_test_mixed.pkl"),
+    ("NQR-sigm-long", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760798607_oyafeyma/metrics_over_time_test_mixed.pkl"),
+    # ("NQR", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760772705_6lc19w8z/metrics_over_time_test_mixed.pkl"),
+    # ("NQR-init", "results/fb15k237-betae_10_0.0002_nqr_0.001_mixed_1760777657_j06e0bu9/metrics_over_time_test_mixed.pkl"),
+    # ("NQR-init-lowlr", "results/fb15k237-betae_10_0.0002_nqr_1e-09_mixed_1760777832_12ka497e/metrics_over_time_test_mixed.pkl"),
+    # ("NQR-init-lowlr-10e", "results/fb15k237-betae_10_0.0002_nqr_1e-09_mixed_1760779573_4fc9vrn6/metrics_over_time_test_mixed.pkl")
 ]),
 output_filename="fb15k237_1p.pdf"
 )

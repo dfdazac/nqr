@@ -21,42 +21,41 @@ from quack.qto.dataset import TestDataset, InfiniteDataLoaderIterator
 from quack.qto.model import KGReasoning
 from quack.qto.util import flatten_query, set_global_seed
 
-
-query_name_dict = {('e', ('r',)): '1p', 
-                    ('e', ('r', 'r')): '2p',
-                    ('e', ('r', 'r', 'r')): '3p',
-                    ('e', ('r', 'r', 'r', 'r')): '4p',
-                    ('e', ('r', 'r', 'r', 'r', 'r')): '5p',
-                    (('e', ('r',)), ('e', ('r',))): '2i',
-                    (('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '3i',
-                    (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '4i',
-                    ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
-                    (('e', ('r', 'r')), ('e', ('r',))): 'pi',
-                    (('e', ('r',)), ('e', ('r', 'n'))): '2in',
-                    (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))): '3in',
-                    ((('e', ('r',)), ('e', ('r', 'n'))), ('r',)): 'inp',
-                    (('e', ('r', 'r')), ('e', ('r', 'n'))): 'pin',
-                    (('e', ('r', 'r', 'n')), ('e', ('r',))): 'pni',
-                    (('e', ('r',)), ('e', ('r',)), ('u',)): '2u-DNF',
-                    ((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)): 'up-DNF',
-                    ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n',)): '2u-DM',
-                    ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n', 'r')): 'up-DM',
-                }
-name_answer_dict = {'1p': ['e', ['r',], 'e'],
+query_name_dict = {('e', ('r',)): '1p',
+                   ('e', ('r', 'r')): '2p',
+                   ('e', ('r', 'r', 'r')): '3p',
+                   ('e', ('r', 'r', 'r', 'r')): '4p',
+                   ('e', ('r', 'r', 'r', 'r', 'r')): '5p',
+                   (('e', ('r',)), ('e', ('r',))): '2i',
+                   (('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '3i',
+                   (('e', ('r',)), ('e', ('r',)), ('e', ('r',)), ('e', ('r',))): '4i',
+                   ((('e', ('r',)), ('e', ('r',))), ('r',)): 'ip',
+                   (('e', ('r', 'r')), ('e', ('r',))): 'pi',
+                   (('e', ('r',)), ('e', ('r', 'n'))): '2in',
+                   (('e', ('r',)), ('e', ('r',)), ('e', ('r', 'n'))): '3in',
+                   ((('e', ('r',)), ('e', ('r', 'n'))), ('r',)): 'inp',
+                   (('e', ('r', 'r')), ('e', ('r', 'n'))): 'pin',
+                   (('e', ('r', 'r', 'n')), ('e', ('r',))): 'pni',
+                   (('e', ('r',)), ('e', ('r',)), ('u',)): '2u-DNF',
+                   ((('e', ('r',)), ('e', ('r',)), ('u',)), ('r',)): 'up-DNF',
+                   ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n',)): '2u-DM',
+                   ((('e', ('r', 'n')), ('e', ('r', 'n'))), ('n', 'r')): 'up-DM',
+                   }
+name_answer_dict = {'1p': ['e', ['r', ], 'e'],
                     '2p': ['e', ['r', 'e', 'r'], 'e'],
                     '3p': ['e', ['r', 'e', 'r', 'e', 'r'], 'e'],
-                    '2i': [['e', ['r',], 'e'], ['e', ['r',], 'e'], 'e'],
-                    '3i': [['e', ['r',], 'e'], ['e', ['r',], 'e'], ['e', ['r',], 'e'], 'e'],
-                    'ip': [[['e', ['r',], 'e'], ['e', ['r',], 'e'], 'e'], ['r',], 'e'],
-                    'pi': [['e', ['r', 'e', 'r'], 'e'], ['e', ['r',], 'e'], 'e'],
-                    '2in': [['e', ['r',], 'e'], ['e', ['r', 'n'], 'e'], 'e'],
-                    '3in': [['e', ['r',], 'e'], ['e', ['r',], 'e'], ['e', ['r', 'n'], 'e'], 'e'],
-                    'inp': [[['e', ['r',], 'e'], ['e', ['r', 'n'], 'e'], 'e'], ['r',], 'e'],
+                    '2i': [['e', ['r', ], 'e'], ['e', ['r', ], 'e'], 'e'],
+                    '3i': [['e', ['r', ], 'e'], ['e', ['r', ], 'e'], ['e', ['r', ], 'e'], 'e'],
+                    'ip': [[['e', ['r', ], 'e'], ['e', ['r', ], 'e'], 'e'], ['r', ], 'e'],
+                    'pi': [['e', ['r', 'e', 'r'], 'e'], ['e', ['r', ], 'e'], 'e'],
+                    '2in': [['e', ['r', ], 'e'], ['e', ['r', 'n'], 'e'], 'e'],
+                    '3in': [['e', ['r', ], 'e'], ['e', ['r', ], 'e'], ['e', ['r', 'n'], 'e'], 'e'],
+                    'inp': [[['e', ['r', ], 'e'], ['e', ['r', 'n'], 'e'], 'e'], ['r', ], 'e'],
                     'pin': [['e', ['r', 'e', 'r'], 'e'], ['e', ['r', 'n'], 'e'], 'e'],
-                    'pni': [['e', ['r', 'e', 'r', 'n'], 'e'], ['e', ['r',], 'e'], 'e'],
-                    '2u-DNF': [['e', ['r',], 'e'], ['e', ['r',], 'e'], ['u',], 'e'],
-                    'up-DNF': [[['e', ['r',], 'e'], ['e', ['r',], 'e'], ['u',], 'e'], ['r',], 'e'],
-                }
+                    'pni': [['e', ['r', 'e', 'r', 'n'], 'e'], ['e', ['r', ], 'e'], 'e'],
+                    '2u-DNF': [['e', ['r', ], 'e'], ['e', ['r', ], 'e'], ['u', ], 'e'],
+                    'up-DNF': [[['e', ['r', ], 'e'], ['e', ['r', ], 'e'], ['u', ], 'e'], ['r', ], 'e'],
+                    }
 name_query_dict = {value: key for key, value in query_name_dict.items()}
 all_tasks = list(name_query_dict.keys())
 espace = 9
@@ -89,19 +88,23 @@ def parse_args(args=None):
     parser.add_argument('--checkpoint', type=str, default=None, help="checkpoint path")
     parser.add_argument('--test_batch_size', default=1, type=int, help='valid/test batch size')
     parser.add_argument('-cpu', '--cpu_num', default=0, type=int, help="used to speed up torch.dataloader")
-    
+
     parser.add_argument('--nentity', type=int, default=0, help='DO NOT MANUALLY SET')
     parser.add_argument('--nrelation', type=int, default=0, help='DO NOT MANUALLY SET')
     parser.add_argument('--fraction', type=int, default=1, help='fraction the entity to save gpu memory usage')
     parser.add_argument('--thrshd', type=float, default=0.001, help='thrshd for neural adjacency matrix')
     parser.add_argument('--neg_scale', type=int, default=1, help='scaling neural adjacency matrix for negation')
-    parser.add_argument('--force_training_edges', action='store_true', help='set scores for edges in training graph to 1')
-    
-    parser.add_argument('--tasks', default='1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF', type=str, help="tasks connected by dot, refer to the BetaE paper for detailed meaning and structure of each task")
-    parser.add_argument('--seed', default=12345, type=int, help="random seed")
-    parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'], help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
+    parser.add_argument('--force_training_edges', action='store_true',
+                        help='set scores for edges in training graph to 1')
 
-    parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"], help="preference type")
+    parser.add_argument('--tasks', default='1p.2p.3p.2i.3i.ip.pi.2in.3in.inp.pin.pni.2u-DNF.up-DNF', type=str,
+                        help="tasks connected by dot, refer to the BetaE paper for detailed meaning and structure of each task")
+    parser.add_argument('--seed', default=12345, type=int, help="random seed")
+    parser.add_argument('-evu', '--evaluate_union', default="DNF", type=str, choices=['DNF', 'DM'],
+                        help='the way to evaluate union queries, transform it to disjunctive normal form (DNF) or use the De Morgan\'s laws (DM)')
+
+    parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"],
+                        help="preference type")
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
@@ -112,10 +115,9 @@ def parse_args(args=None):
     parser.add_argument('--alpha', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
     parser.add_argument('--beta', default=0.0, type=float, help="Alpha_n parameter for the cosine similarity reranker")
 
-    parser.add_argument('--preference_embedding', default="none", choices=["none", "mean", "selfattn"], help="preference embedding method")
-    parser.add_argument("--num_layers", default=2, choices=[1, 2], type=int, help="Number of layers for the preference embedding")
-    parser.add_argument("--activation", default="relu", choices=["relu", "elu"], help="Activation function for the reranking network")
-    parser.add_argument("--margin", default=0.1, type=float, help="margin for the nqr reranker")
+    parser.add_argument("--hidden_dim", default=256, type=int, help="Hidden dimension for the neural reranking network")
+    parser.add_argument("--activation", default="relu", choices=["relu", "elu"],
+                        help="Activation function for the reranking network")
     parser.add_argument("--kl_weight", default=1.0, type=float, help="kl divergence weight")
     return parser.parse_args(args)
 
@@ -181,17 +183,18 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
         mrr_easy, h1_easy, h3_easy, h10_easy = 1, 1, 1, 1
 
     return {
-            'mrr_hard': mrr_hard,
-            'hits@1_hard': h1_hard,
-            'hits@3_hard': h3_hard,
-            'hits@10_hard': h10_hard,
-            'num_hard_answer': num_hard,
-            'mrr_easy': mrr_easy,
-            'hits@1_easy': h1_easy,
-            'hits@3_easy': h3_easy,
-            'hits@10_easy': h10_easy,
-            'num_easy_answer': num_easy,
-        }
+        'mrr_hard': mrr_hard,
+        'hits@1_hard': h1_hard,
+        'hits@3_hard': h3_hard,
+        'hits@10_hard': h10_hard,
+        'num_hard_answer': num_hard,
+        'mrr_easy': mrr_easy,
+        'hits@1_easy': h1_easy,
+        'hits@3_easy': h3_easy,
+        'hits@10_easy': h10_easy,
+        'num_easy_answer': num_easy,
+    }
+
 
 def train(model, args, tasks, device, output_path):
     '''
@@ -258,6 +261,7 @@ def train(model, args, tasks, device, output_path):
             batch_negative_ids = []
             batch_preferences = []
             batch_labels = []
+            batch_pref_ids = []
             num_preferences = random.randint(1, 10)
             for i in range(args.batch_size):
                 try:
@@ -282,8 +286,9 @@ def train(model, args, tasks, device, output_path):
                 sampled = random.sample(combined, min(num_preferences, len(combined)))
                 preferences, labels = zip(*sampled)
 
-                batch_preferences.append(torch.tensor(preferences, device=device))
-                batch_labels.append(torch.tensor(labels, device=device))
+                batch_preferences.extend(preferences)
+                batch_labels.extend(labels)
+                batch_pref_ids.extend([i] * len(preferences))
 
             if len(batch_scores) == 0:
                 break
@@ -291,22 +296,22 @@ def train(model, args, tasks, device, output_path):
             train_bar.update(len(batch_scores))
 
             batch_scores = torch.cat(batch_scores)
-            batch_preferences = pad_sequence(batch_preferences, batch_first=True, padding_value=-1)
-            batch_labels = pad_sequence(batch_labels, batch_first=True, padding_value=-1)
+            batch_preferences = torch.tensor(batch_preferences, device=device)
+            batch_labels = torch.tensor(batch_labels, device=device)
+            batch_pref_ids = torch.tensor(batch_pref_ids, device=device)
             batch_positives = torch.tensor(batch_positives, device=device)
             batch_negatives = torch.tensor(batch_negatives, device=device)
             batch_positive_ids = torch.tensor(batch_positive_ids, device=device)
             batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
             # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
             preference_loss, answer_loss, deltas = model.reranking_loss(
-                batch_preferences,
-                batch_labels,
+                (batch_preferences, batch_labels, batch_pref_ids),
                 batch_scores,
                 (batch_positives, batch_positive_ids),
-                (batch_negatives, batch_negative_ids),
-                use_nqr=args.reranker == "nqr"
+                (batch_negatives, batch_negative_ids)
             )
-            loss = preference_loss + args.kl_weight * answer_loss
+
+            loss = preference_loss + answer_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -331,10 +336,12 @@ def train(model, args, tasks, device, output_path):
 
         train_bar.close()
         if epoch % args.valid_frequency == 0:
-            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader, query_name_dict, device, output_path, "valid", preference="mixed")
+            all_metrics = evaluate(model, valid_hard_answers, valid_easy_answers, args, valid_dataloader,
+                                   query_name_dict, device, output_path, "valid", preference="mixed")
             wandb.log({f"valid_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
 
-    all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device, output_path, "test", preference="mixed")
+    all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args, test_dataloader, query_name_dict, device,
+                           output_path, "test", preference="mixed")
     wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
@@ -347,7 +354,8 @@ def compute_ndcg(relevance_scores, predicted_scores, k_values=(10, 100)):
 
 
 @torch.inference_mode()
-def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, mode, preference):
+def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path,
+             mode, preference):
     '''
     Evaluate queries in dataloader
     '''
@@ -363,7 +371,9 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
     total_metrics_over_10_steps = defaultdict(list)
     query_to_ranking = defaultdict(dict)
-    for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc=f"Evaluating on {mode} - preference: {preference}", mininterval=1):
+    for flat_queries, queries, query_structures, sessions in tqdm(dataloader,
+                                                                  desc=f"Evaluating on {mode} - preference: {preference}",
+                                                                  mininterval=1):
         sessions = sessions[0]
         if evaluate_preferences and len(sessions) == 0:
             raise ValueError("No sessions found for query")
@@ -422,12 +432,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 metrics_over_10_steps = defaultdict(list)
                 for t in range(len(session_feedback)):
                     # Rerank embedding scores based on preferences
-                    preferences = torch.tensor(session_feedback[:t+1], device=device)
-                    labels = torch.tensor(session_labels[:t+1], device=device)
+                    preferences = torch.tensor(session_feedback[:t + 1], device=device)
+                    labels = torch.tensor(session_labels[:t + 1], device=device)
                     if args.reranker == "default":
                         session_scores = scores
                     if args.reranker in ("cosine", "cosine_mean"):
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta, use_mean_cosine)
+                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta,
+                                                             use_mean_cosine)
                     elif args.reranker == "random":
                         session_scores = model.rerank_random(scores, preferences, labels)
                     elif args.reranker == "greedy":
@@ -488,7 +499,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         for metric in results[query_structure][0].keys():
             if metric in ['num_hard_answer', 'num_easy_answer']:
                 continue
-            metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]])/len(results[query_structure])
+            metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]]) / len(
+                results[query_structure])
         metrics[query_structure]['num_queries'] = len(results[query_structure])
 
     if args.save_scores:
@@ -497,7 +509,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
             os.makedirs(scores_output_path)
             with open(osp.join(scores_output_path, "qto_scores.pkl"), "wb") as f:
                 pickle.dump(rankings_dict, f)
-    
+
     num_query_structures = 0
     num_queries = 0
     with open(osp.join(output_path, f'all_metrics_{mode}_{preference}.txt'), "w") as f:
@@ -516,7 +528,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         for metric in average_metrics:
             average_metrics[metric] /= num_query_structures
             all_metrics["_".join(["average", metric])] = average_metrics[metric]
-        log_metrics('%s average'%mode, average_metrics, file_pointer=f)
+        log_metrics('%s average' % mode, average_metrics, file_pointer=f)
 
     if evaluate_preferences:
         with open(osp.join(output_path, f"p_values_{mode}_{preference}.txt"), "w") as f:
@@ -555,7 +567,7 @@ def load_data(args, tasks, split):
         if query_name_dict[structure] not in tasks:
             queries.pop(structure)
         elif args.preference != "none":
-                queries[structure] = {q for q in queries[structure] if q in sessions}
+            queries[structure] = {q for q in queries[structure] if q in sessions}
 
     return queries, hard_answers, easy_answers, sessions
 
@@ -574,7 +586,8 @@ def evaluate_split(args, tasks, split, model, query_name_dict, device, output_pa
         num_workers=args.cpu_num,
         collate_fn=TestDataset.collate_fn
     )
-    evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, split, preference)
+    evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, split,
+             preference)
 
 
 def main(args):
@@ -583,24 +596,28 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    with open('%s/stats.txt'%args.data_path) as f:
+    with open('%s/stats.txt' % args.data_path) as f:
         stats = f.readlines()
         num_entities = int(stats[0].split(' ')[-1])
         num_relations = int(stats[1].split(' ')[-1])
-    
+
     global id2ent, id2rel
-    with open('%s/id2ent.pkl'%args.data_path, 'rb') as f:
+    with open('%s/id2ent.pkl' % args.data_path, 'rb') as f:
         id2ent = pickle.load(f)
-    with open('%s/ent2id.pkl'%args.data_path, 'rb') as f:
+    with open('%s/ent2id.pkl' % args.data_path, 'rb') as f:
         ent2id = pickle.load(f)
-    with open('%s/id2rel.pkl'%args.data_path, 'rb') as f:
+    with open('%s/id2rel.pkl' % args.data_path, 'rb') as f:
         id2rel = pickle.load(f)
 
     args.nentity = num_entities
     args.nrelation = num_relations
 
-    adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation, args.data_path)
-    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict, args.preference_embedding, args.num_layers, args.activation, args.margin)
+    adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation,
+                                              args.data_path)
+    model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict,
+                        use_nqr=args.reranker == "nqr",
+                        hidden_dim=args.hidden_dim,
+                        activation=args.activation)
 
     if args.checkpoint:
         print(f"Loading checkpoint {args.checkpoint}")
@@ -644,6 +661,7 @@ def main(args):
         evaluate_split(args, tasks, "test", model, query_name_dict, device, output_path, args.preference)
 
     print(f"Done, output path is {output_path}")
+
 
 if __name__ == '__main__':
     main(parse_args())
