@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram, linkage
 
-from quack.qto.util import flatten
+from nqr.qto.util import flatten
 
 class PreferenceGenerator:
     def __init__(self,

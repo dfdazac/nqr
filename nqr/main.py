@@ -11,9 +11,9 @@ from tap import Tap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from quack.feedback import PreferenceGenerator
-from quack.qto.query import name_query_dict, query_name_dict
-from quack.qto.util import flatten
+from nqr.feedback import PreferenceGenerator
+from nqr.qto.query import name_query_dict, query_name_dict
+from nqr.qto.util import flatten
 
 
 COMMAND_EMBED = "embed"

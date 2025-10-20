@@ -16,10 +16,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import scipy.stats as stats
 import wandb
+import yaml
 
-from quack.qto.dataset import TestDataset, InfiniteDataLoaderIterator
-from quack.qto.model import KGReasoning
-from quack.qto.util import flatten_query, set_global_seed
+from nqr.qto.dataset import TestDataset, InfiniteDataLoaderIterator
+from nqr.qto.model import KGReasoning
+from nqr.qto.util import flatten_query, set_global_seed
 
 query_name_dict = {('e', ('r',)): '1p',
                    ('e', ('r', 'r')): '2p',
@@ -60,6 +61,43 @@ name_query_dict = {value: key for key, value in query_name_dict.items()}
 all_tasks = list(name_query_dict.keys())
 espace = 9
 rspace = 11
+
+
+def load_config_from_yaml(config_path):
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+def merge_config_with_args(args, config, parser_defaults):
+    """Merge YAML config with command line arguments. Command line args take precedence."""
+    if config is None:
+        return args
+
+    # Convert args namespace to dict for easier manipulation
+    args_dict = vars(args)
+
+    for key, value in config.items():
+        # Only update if the argument wasn't explicitly set (i.e., it's still the default value)
+        if key in args_dict and args_dict[key] == parser_defaults.get(key):
+            # Convert string values to appropriate types based on parser defaults
+            if key in parser_defaults:
+                default_type = type(parser_defaults[key])
+                if default_type == bool:
+                    # Handle boolean values specially
+                    if isinstance(value, str):
+                        args_dict[key] = value.lower() in ('true', '1', 'yes', 'on')
+                    else:
+                        args_dict[key] = bool(value)
+                elif default_type in (int, float, str):
+                    args_dict[key] = default_type(value)
+                else:
+                    args_dict[key] = value
+            else:
+                args_dict[key] = value
+
+    return argparse.Namespace(**args_dict)
 
 
 def parse_args(args=None):
@@ -108,18 +146,44 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'random', 'greedy', 'cosine', 'ranknet', 'nqr', 'cosine_mean'],
+                        choices=['default', 'cosine', 'ranknet', 'nqr'],
                         help='reranker method')
 
     # Cosine hyperparameters
-    parser.add_argument('--alpha', default=0.5, type=float, help="Alpha_p parameter for the cosine similarity reranker")
-    parser.add_argument('--beta', default=0.0, type=float, help="Alpha_n parameter for the cosine similarity reranker")
+    parser.add_argument('--alpha', default=0.5, type=float, help="Convex combination parameter for the cosine similarity reranker")
+    parser.add_argument('--beta', default=0.0, type=float, help="Positive-negative combination parameter for the cosine similarity reranker")
 
     parser.add_argument("--hidden_dim", default=256, type=int, help="Hidden dimension for the neural reranking network")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"],
                         help="Activation function for the reranking network")
     parser.add_argument("--kl_weight", default=1.0, type=float, help="kl divergence weight")
-    return parser.parse_args(args)
+    parser.add_argument('--config', type=str, default=None, help='path to YAML config file')
+
+    # Parse arguments first to get config path
+    parsed_args = parser.parse_args(args)
+
+    # If no config file specified, return parsed args as-is
+    if parsed_args.config is None:
+        return parsed_args
+
+    # Load YAML config
+    try:
+        config = load_config_from_yaml(parsed_args.config)
+    except FileNotFoundError:
+        print(f"Error: Config file '{parsed_args.config}' not found.")
+        exit(1)
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML config file: {e}")
+        exit(1)
+
+    # Get default values by creating a parser with no arguments
+    default_args = parser.parse_args([])
+    parser_defaults = vars(default_args)
+
+    # Merge config with parsed arguments
+    merged_args = merge_config_with_args(parsed_args, config, parser_defaults)
+
+    return merged_args
 
 
 def log_metrics(mode, metrics, file_pointer):
@@ -308,10 +372,15 @@ def train(model, args, tasks, device, output_path):
                 (batch_preferences, batch_labels, batch_pref_ids),
                 batch_scores,
                 (batch_positives, batch_positive_ids),
-                (batch_negatives, batch_negative_ids)
+                (batch_negatives, batch_negative_ids),
+                use_nqr=args.reranker == "nqr"
             )
 
-            loss = preference_loss + answer_loss
+            if args.reranker == "nqr":
+                loss = preference_loss + args.kl_weight * answer_loss
+            else:
+                loss = preference_loss + answer_loss
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -436,13 +505,8 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     labels = torch.tensor(session_labels[:t + 1], device=device)
                     if args.reranker == "default":
                         session_scores = scores
-                    if args.reranker in ("cosine", "cosine_mean"):
-                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta,
-                                                             use_mean_cosine)
-                    elif args.reranker == "random":
-                        session_scores = model.rerank_random(scores, preferences, labels)
-                    elif args.reranker == "greedy":
-                        session_scores = model.rerank_greedy(scores, preferences, labels)
+                    if args.reranker == "cosine":
+                        session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta)
                     elif args.reranker in ("ranknet", "nqr"):
                         session_scores = model.rerank_nqr(scores, preferences, labels)
 
@@ -499,8 +563,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         for metric in results[query_structure][0].keys():
             if metric in ['num_hard_answer', 'num_easy_answer']:
                 continue
-            metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]]) / len(
-                results[query_structure])
+            metrics[query_structure][metric] = sum([result[metric] for result in results[query_structure]]) / len(results[query_structure])
         metrics[query_structure]['num_queries'] = len(results[query_structure])
 
     if args.save_scores:
@@ -615,7 +678,7 @@ def main(args):
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation,
                                               args.data_path)
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict,
-                        use_nqr=args.reranker == "nqr",
+                        use_reranker=args.reranker in ("ranknet", "nqr"),
                         hidden_dim=args.hidden_dim,
                         activation=args.activation)
 
@@ -639,7 +702,7 @@ def main(args):
     folder_name += f"_{args.preference}_{int(time.time())}"
 
     # Initialize wandb early to get run ID
-    wandb.init(project="quack", mode='online' if args.wandb else 'disabled', notes=args.notes)
+    wandb.init(project="nqr", mode='online' if args.wandb else 'disabled', notes=args.notes)
     folder_name += f"_{wandb.run.id}"
     output_path = os.path.join('results', folder_name)
     if not os.path.exists(output_path):

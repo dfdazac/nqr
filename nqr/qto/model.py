@@ -60,7 +60,7 @@ def neural_adj_matrix(model, rel, nentity, device, thrshd, adj_list):
 
 
 class KGReasoning(nn.Module):
-    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, use_nqr=False, hidden_dim=256, activation="relu"):
+    def __init__(self, args, device, adj_list, query_name_dict, name_answer_dict, use_reranker=False, hidden_dim=256, activation="relu"):
         super(KGReasoning, self).__init__()
         self.nentity = args.nentity
         self.nrelation = args.nrelation
@@ -109,8 +109,7 @@ class KGReasoning(nn.Module):
             torch.save(self.relation_embeddings, filename)
 
         embedding_dim = self.kbc_model.rank * 2
-
-        if use_nqr:
+        if use_reranker:
             if activation == "relu":
                 activation_class = nn.ReLU
             elif activation == "elu":
@@ -413,7 +412,7 @@ class KGReasoning(nn.Module):
 
         return batched_scores
 
-    def reranking_loss(self, pref_data, scores, in_cluster_data, out_cluster_data):
+    def reranking_loss(self, pref_data, scores, in_cluster_data, out_cluster_data, use_nqr=False):
         """
         Computes the margin-based loss for reranking.
 
@@ -461,7 +460,7 @@ class KGReasoning(nn.Module):
 
         preference_loss = self._ranknet_loss(new_in_cluster_scores, new_out_cluster_scores, in_cluster_batch_id, out_cluster_batch_id, batch_size)
 
-        if True:
+        if use_nqr:
             in_cluster_scores = scores[in_cluster_batch_id, in_cluster_entities]
             out_cluster_scores = scores[out_cluster_batch_id, out_cluster_entities]
             random_scores = scores[random_batch_id, random_entities]
@@ -475,7 +474,7 @@ class KGReasoning(nn.Module):
                 batch_ids=torch.cat([in_cluster_batch_id, out_cluster_batch_id, random_batch_id]),
                 batch_size=batch_size)
             # (batch_size, max_entities), padded with -inf
-            answer_loss = 1e-3 * F.kl_div(input=torch.log_softmax(new_scores, dim=-1),
+            answer_loss = F.kl_div(input=torch.log_softmax(new_scores, dim=-1),
                                    target=torch.log_softmax(prev_scores, dim=-1),
                                    reduction='batchmean',
                                    log_target=True)
