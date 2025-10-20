@@ -692,9 +692,11 @@ def main(args):
     dataset_name = args.data_path.split('/')[-1]
     folder_name = f"{dataset_name}_{args.fraction}_{args.thrshd}_{args.reranker}"
     if args.reranker == "cosine":
-        folder_name += f"_{args.alpha_p}_{args.alpha_n}"
-    elif args.reranker == "nqr":
+        folder_name += f"_{args.alpha}_{args.beta}"
+    elif args.reranker == "ranknet":
         folder_name += f"_{args.lr}"
+    elif args.reranker == "nqr":
+        folder_name += f"_{args.lr}_{args.kl_weight}"
     if args.do_valid:
         folder_name += "_valid"
     if args.do_test:

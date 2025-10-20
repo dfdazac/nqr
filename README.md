@@ -8,6 +8,14 @@ We assume a given knowledge graph and a dataset of queries and their answers. Th
 2. **Training QA model**: We make use of QTO, a state-of-the-art model for complex query answering, to obtain rankings of entities for variables in the query. This step provides answers to a query **without** considering the preferences.
 3. **Training and evaluating the preference model**: Using the preferences generated in step 1, we train a re-ranking model for modifying the predictions of QTO (obtained in step 2) to align with the preferences. We evaluate the model on a held-out set of queries.
 
+## Installation
+
+```bash
+conda create -n nqr python=3.12
+conda activate nqr
+pip install -r requirements.txt
+```
+
 ## 1. Automatic Preference Generation
 
 Current datasets for approximate query answering on knowledge graphs contain pairs of queries and their answers. Each query has at least one variable (the target variable), but it can also contain intermediate variables. We extend these datasets by enumerating the possible values of variables, and grouping them according to a proxy of similarity (such as cosine similarity based on an embedding of entitiy descriptions). These groups model **soft** preferences over the entities that can occur in the variables of the query.

@@ -1,0 +1,20 @@
+-e .
+
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+torch==2.7.0+cu126
+torchaudio==2.7.0+cu126
+torchvision==0.22.0+cu126
+
+xformers==0.0.30
+datasets==3.6.0
+matplotlib==3.10.1
+networkx==3.4.2
+pandas==2.2.3
+scikit-learn==1.6.1
+scipy==1.15.2
+sentence-transformers==4.1.0
+transformers==4.51.3
+typed-argument-parser==1.10.1
+wandb==0.19.11
+pyyaml==6.0.2

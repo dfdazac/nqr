@@ -150,7 +150,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
 
 plot_metrics_comparison(
     OrderedDict([
-        ("Unconstrained", "results/fb15k237-betae_10_0.0002_default_test_mixed_1746902312_mcxg6hoy"),
+        ("Unconstrained", "results/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
     ]),
     output_filename="fb15k237.pdf",
     fig_title="FB15k-237",

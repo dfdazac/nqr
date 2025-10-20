@@ -1,0 +1,15 @@
+# Hetionet QTO Test Target Configuration
+
+# Data and model paths
+data_path: "data/hetionet"
+kbc_path: "checkpoints/hetionet/hetionet_ComplEx_Rank1000_RegN3_Lmbda0.05_W0.1/model.pt"
+
+# Model parameters
+fraction: 10
+thrshd: 0.001
+neg_scale: 6
+
+# Evaluation settings
+do_test: true
+reranker: "default"
+preference: "mixed"
