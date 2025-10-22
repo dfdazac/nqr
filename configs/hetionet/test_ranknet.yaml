@@ -1,0 +1,16 @@
+# Hetionet Ranknet train configuration
+
+# Data and model paths
+data_path: "data/hetionet"
+kbc_path: "checkpoints/hetionet/hetionet_ComplEx_Rank1000_RegN3_Lmbda0.05_W0.1/model.pt"
+
+# Model parameters
+fraction: 10
+thrshd: 0.001
+neg_scale: 6
+
+# Test settings
+do_test: true
+preference: "mixed"
+reranker: "ranknet"
+checkpoint: "results/hetionet/ranknet/valid/hetionet_10_0.001_ranknet_0.001_mixed_1761047442_6y8isgy9/6y8isgy9-model.pt"

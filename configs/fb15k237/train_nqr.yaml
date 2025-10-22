@@ -1,0 +1,19 @@
+# FB15k237 Ranknet train configuration
+
+# Data and model paths
+data_path: "data/fb15k237-betae"
+kbc_path: "checkpoints/fb15k237-betae/fb15k237-betae_ComplEx_Rank1000_RegN3_Lmbda0.05_W4.0/model.pt"
+
+# Model parameters
+fraction: 10
+thrshd: 0.0002
+neg_scale: 3
+
+# Training settings
+do_train: true
+tasks: "1p"
+preference: "mixed"
+reranker: "nqr"
+batch_size: 128
+num_epochs: 10
+wandb: true
