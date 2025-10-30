@@ -152,20 +152,17 @@ plot_metrics_comparison(
     OrderedDict([
         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
         ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
-        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
-        ("NQR", "results/fb15k237/nqr/test/fb15k237-betae_10_0.0002_nqr_0.001_1.0_test_mixed_1761054957_dit89hrv")
+        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw")
     ]),
     output_filename="fb15k237.pdf",
-    fig_title="FB15k-237",
-    add_legend=True
+    fig_title="FB15k-237"
 )
 
 plot_metrics_comparison(
     OrderedDict([
         ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
         ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
-        ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe"),
-        ("NQR", "results/hetionet/nqr/test/hetionet_10_0.001_nqr_0.001_1.0_test_mixed_1761057576_ev6phf31")
+        ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
     ]),
     output_filename="hetionet.pdf",
     fig_title="Hetionet",
