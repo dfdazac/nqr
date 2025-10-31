@@ -9,6 +9,8 @@ import random
 import time
 from pprint import pprint
 
+import lightgbm as lgb
+import numpy as np
 from sklearn.metrics import ndcg_score
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -146,7 +148,7 @@ def parse_args(args=None):
     parser.add_argument('--reranker',
                         default='nqr',
                         type=str,
-                        choices=['default', 'cosine', 'ranknet', 'nqr'],
+                        choices=['default', 'cosine', 'ranknet', 'nqr', 'lightgbm_lambdamart'],
                         help='reranker method')
 
     # Cosine hyperparameters
@@ -367,7 +369,7 @@ def train(model, args, tasks, device, output_path):
             batch_negatives = torch.tensor(batch_negatives, device=device)
             batch_positive_ids = torch.tensor(batch_positive_ids, device=device)
             batch_negative_ids = torch.tensor(batch_negative_ids, device=device)
-            # and something similar for batch_inputs and batch_labels, once this is ready, we can do the following
+
             preference_loss, answer_loss, deltas = model.reranking_loss(
                 (batch_preferences, batch_labels, batch_pref_ids),
                 batch_scores,
@@ -415,6 +417,108 @@ def train(model, args, tasks, device, output_path):
     torch.save(model.state_dict(), osp.join(output_path, f'{wandb.run.id}-model.pt'))
 
 
+@torch.inference_mode()
+def train_lightgbm(model, args, tasks, device, output_path):
+    '''
+    Train LightGBM ranker on training data
+    '''
+    queries, answers, _, sessions = load_data(args, tasks, "train")
+    queries = flatten_query(queries)
+    train_dataset = TestDataset(queries, sessions, args.nentity, args.nrelation)
+    
+    test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
+    test_queries = flatten_query(test_queries)
+    test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
+    
+    if args.test_run:
+        train_dataset = torch.utils.data.Subset(train_dataset, range(10))
+        test_dataset = torch.utils.data.Subset(test_dataset, range(10))
+    
+    dataloader = DataLoader(
+        train_dataset,
+        batch_size=1,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn,
+        shuffle=False
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
+    )
+    
+    model.to(device)
+    
+    tasks_str = "_".join(sorted(tasks))
+    cache_filename = f"lgb_training_data_{tasks_str}.pkl"
+    cache_path = osp.join(args.data_path, cache_filename)
+    
+    if osp.exists(cache_path):
+        print(f"Loading cached training data from {cache_path}...")
+        with open(cache_path, 'rb') as f:
+            training_data = pickle.load(f)
+        print(f"Loaded {len(training_data)} training examples from cache")
+    else:
+        training_data = []
+        
+        print("Collecting training data for LightGBM...")
+        for flat_queries, queries, query_structures, sessions in tqdm(dataloader, desc="Extracting features"):
+            sessions = sessions[0]
+            if len(sessions) == 0:
+                continue
+                
+            flat_queries = torch.tensor(flat_queries, device=device)
+            scores, *_ = model.embed_query(flat_queries, query_structures[0], 0)
+            scores = scores.squeeze()
+            
+            # For each session, create training example
+            for positives, negatives in sessions:
+                num_random = min(100, args.nentity - len(positives) - len(negatives))
+                all_entities = set(range(args.nentity))
+                available = all_entities - set(positives) - set(negatives)
+                random_entities = random.sample(list(available), num_random)
+                
+                entities = positives + negatives + random_entities
+                relevance = [2] * len(positives) + [1] * len(negatives) + [0] * len(random_entities)
+                
+                # Sample some preferences for feature extraction
+                num_prefs = min(10, len(positives) + len(negatives))
+                pref_entities = random.sample(positives + negatives, num_prefs)
+                pref_labels = [1 if e in positives else 0 for e in pref_entities]
+                
+                preferences = torch.tensor(pref_entities, device=device)
+                labels = torch.tensor(pref_labels, device=device)
+                
+                # Extract features for all entities
+                features = model.extract_features(scores, preferences, labels)
+                features_np = features[entities].cpu().numpy()
+                relevance_np = np.array(relevance)
+                
+                training_data.append((features_np, relevance_np, len(entities)))
+        
+        print(f"Collected {len(training_data)} training examples")
+        
+        print(f"Saving training data to {cache_path}...")
+        with open(cache_path, 'wb') as f:
+            pickle.dump(training_data, f)
+        print("Training data cached successfully")
+    
+    print("Training LightGBM ranker...")
+    lgb_model = model.train_lightgbm(training_data)
+    
+    model_path = osp.join(output_path, f'{wandb.run.id}-lightgbm.txt')
+    lgb_model.save_model(model_path)
+    print(f"Saved LightGBM model to {model_path}")
+    
+    all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args,
+                          test_dataloader, query_name_dict, device, output_path, "test", 
+                          preference="mixed", lgb_model=lgb_model)
+    wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
+    
+    return lgb_model
+
+
 def compute_ndcg(relevance_scores, predicted_scores, k_values=(10, 100)):
     results = {}
     for k in k_values:
@@ -424,7 +528,7 @@ def compute_ndcg(relevance_scores, predicted_scores, k_values=(10, 100)):
 
 @torch.inference_mode()
 def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path,
-             mode, preference):
+             mode, preference, lgb_model=None):
     '''
     Evaluate queries in dataloader
     '''
@@ -504,9 +608,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     preferences = torch.tensor(session_feedback[:t + 1], device=device)
                     labels = torch.tensor(session_labels[:t + 1], device=device)
                     if args.reranker == "default":
-                        session_scores = scores
-                    if args.reranker == "cosine":
+                        session_scores = scores.clone()
+                        answers = torch.tensor(positives + negatives)
+                        session_scores[answers] = session_scores[answers].sort(descending=True).values
+                    elif args.reranker == "cosine":
                         session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta)
+                    elif args.reranker == "lightgbm_lambdamart":
+                        session_scores = model.rerank_lightgbm(scores, preferences, labels, lgb_model)
                     elif args.reranker in ("ranknet", "nqr"):
                         session_scores = model.rerank_nqr(scores, preferences, labels)
 
@@ -635,24 +743,6 @@ def load_data(args, tasks, split):
     return queries, hard_answers, easy_answers, sessions
 
 
-def evaluate_split(args, tasks, split, model, query_name_dict, device, output_path, preference):
-    queries, hard_answers, easy_answers, sessions = load_data(args, tasks, split)
-    queries = flatten_query(queries)
-    dataloader = DataLoader(
-        TestDataset(
-            queries,
-            sessions,
-            args.nentity,
-            args.nrelation,
-        ),
-        batch_size=args.test_batch_size,
-        num_workers=args.cpu_num,
-        collate_fn=TestDataset.collate_fn
-    )
-    evaluate(model, hard_answers, easy_answers, args, dataloader, query_name_dict, device, output_path, split,
-             preference)
-
-
 def main(args):
     set_global_seed(args.seed)
     tasks = args.tasks.split('.')
@@ -678,14 +768,18 @@ def main(args):
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation,
                                               args.data_path)
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict,
-                        use_reranker=args.reranker in ("ranknet", "nqr"),
+                        use_reranker=args.reranker in ("ranknet", "nqr", "lambdamart"),
                         hidden_dim=args.hidden_dim,
                         activation=args.activation)
 
+    lgb_model = None
     if args.checkpoint:
         print(f"Loading checkpoint {args.checkpoint}")
-        model.load_state_dict(torch.load(args.checkpoint))
-        model.to(device)
+        if args.reranker == "lightgbm_lambdamart":
+            lgb_model = lgb.Booster(model_file=args.checkpoint)
+        else:
+            model.load_state_dict(torch.load(args.checkpoint))
+            model.to(device)
 
     pprint(vars(args))
 
@@ -717,13 +811,34 @@ def main(args):
     print(f"Running with output path {output_path}")
 
     if args.do_train:
-        train(model, args, tasks, device, output_path)
+        if args.reranker == "lightgbm_lambdamart":
+            lgb_model = train_lightgbm(model, args, tasks, device, output_path)
+        else:
+            train(model, args, tasks, device, output_path)
 
     if args.do_valid:
-        evaluate_split(args, tasks, "valid", model, query_name_dict, device, output_path, args.preference)
+        queries, hard_answers, easy_answers, sessions = load_data(args, tasks, "valid")
+        queries = flatten_query(queries)
+        dataloader = DataLoader(
+            TestDataset(queries, sessions, args.nentity, args.nrelation),
+            batch_size=args.test_batch_size,
+            num_workers=args.cpu_num,
+            collate_fn=TestDataset.collate_fn
+        )
+        evaluate(model, hard_answers, easy_answers, args, dataloader, 
+                query_name_dict, device, output_path, "valid", args.preference, lgb_model=lgb_model)
 
     if args.do_test:
-        evaluate_split(args, tasks, "test", model, query_name_dict, device, output_path, args.preference)
+        queries, hard_answers, easy_answers, sessions = load_data(args, tasks, "test")
+        queries = flatten_query(queries)
+        dataloader = DataLoader(
+            TestDataset(queries, sessions, args.nentity, args.nrelation),
+            batch_size=args.test_batch_size,
+            num_workers=args.cpu_num,
+            collate_fn=TestDataset.collate_fn
+        )
+        evaluate(model, hard_answers, easy_answers, args, dataloader, 
+                query_name_dict, device, output_path, "test", args.preference, lgb_model=lgb_model)
 
     print(f"Done, output path is {output_path}")
 

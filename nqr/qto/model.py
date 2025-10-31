@@ -1,23 +1,19 @@
-import logging
-from itertools import pairwise
+import os
+import sys
 
+import lightgbm as lgb
 import numpy as np
+import optuna
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
-import random
-import pickle
-import math
-import collections
-import itertools
-import time
+from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-import os
-import sys
-import json
+
+
 sys.path.append('rp')
 from .kbc.src.models import ComplEx
+
 
 def inverse_softplus(y):
     return torch.log(torch.exp(torch.tensor(y)) - 1.0)
@@ -486,3 +482,147 @@ class KGReasoning(nn.Module):
         all_deltas = in_cluster_deltas, out_cluster_deltas, random_deltas
 
         return preference_loss, answer_loss, all_deltas
+
+    def extract_features(self, scores, preferences, labels):
+        """
+        Extract features for LightGBM: [base_score, mean_pos_sim, mean_neg_sim].
+
+        Args:
+            scores: (num_entities,) base scores for all entities
+            preferences: entity IDs of preference feedback
+            labels: labels for preferences (1=positive, 0=negative)
+
+        Returns:
+            features: (num_entities, 3) feature matrix
+        """
+        similarities = self.kbc_model.compute_similarities(preferences)
+
+        pos_labels_mask = labels == 1
+        neg_labels_mask = labels == 0
+
+        mean_pos_sim = torch.zeros_like(scores)
+        mean_neg_sim = torch.zeros_like(scores)
+
+        if pos_labels_mask.sum().item() > 0:
+            mean_pos_sim = similarities[pos_labels_mask].mean(dim=0)
+        if neg_labels_mask.sum().item() > 0:
+            mean_neg_sim = similarities[neg_labels_mask].mean(dim=0)
+
+        features = torch.stack([scores, mean_pos_sim, mean_neg_sim], dim=1)
+        return features
+
+    def train_lightgbm(self, training_data):
+        """
+        Train a LightGBM ranker on training data.
+
+        Args:
+            training_data: list of (features, relevance, group_size) tuples
+
+        Returns:
+            Trained LightGBM booster
+        """
+
+        # Aggregate all training data
+        all_features = []
+        all_relevance = []
+        all_groups = []
+
+        for features, relevance, group_size in training_data:
+            all_features.append(features)
+            all_relevance.append(relevance)
+            all_groups.append(group_size)
+
+        X = np.vstack(all_features)
+        y = np.hstack(all_relevance)
+        groups = all_groups
+
+        n_groups = len(groups)
+        group_indices = np.arange(n_groups)
+        train_groups, val_groups = train_test_split(group_indices, test_size=0.2, random_state=42)
+
+        group_boundaries = np.cumsum([0] + list(groups))
+
+        def get_split_data(selected_groups):
+            idx = np.concatenate([
+                np.arange(group_boundaries[g], group_boundaries[g + 1])
+                for g in selected_groups
+            ])
+            subset_groups = [groups[g] for g in selected_groups]
+            return X[idx], y[idx], subset_groups
+
+        X_train, y_train, groups_train = get_split_data(train_groups)
+        X_val, y_val, groups_val = get_split_data(val_groups)
+
+        train_data = lgb.Dataset(X_train, label=y_train, group=groups_train)
+        valid_data = lgb.Dataset(X_val, label=y_val, group=groups_val, reference=train_data)
+
+        def objective(trial):
+            params = {
+                "objective": "lambdarank",
+                "metric": "ndcg",
+                "ndcg_eval_at": [10],
+                "boosting_type": "gbdt",
+                "learning_rate": trial.suggest_float("learning_rate", 0.02, 0.1, log=True),
+                "num_leaves": trial.suggest_int("num_leaves", 7, 31),
+                "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 5, 100),
+                "feature_fraction": 1.0,  # small feature space, use all
+                "bagging_fraction": trial.suggest_float("bagging_fraction", 0.7, 1.0),
+                "bagging_freq": trial.suggest_int("bagging_freq", 3, 10),
+                "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 0.5),
+                "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 0.5),
+                "label_gain": [0, 1, 3],
+                "feature_pre_filter": False,
+                "verbose": -1,
+            }
+
+            model = lgb.train(
+                params,
+                train_data,
+                num_boost_round=100,
+                valid_sets=[valid_data]
+            )
+
+            return model.best_score["valid_0"]["ndcg@10"]
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=10)
+
+        print("Best trial parameters:")
+        print(study.best_trial.params)
+        print(f"Best NDCG@10: {study.best_value:.4f}")
+
+        best_params = {
+            **study.best_trial.params,
+            "objective": "lambdarank",
+            "metric": "ndcg",
+            "ndcg_eval_at": [10],
+            "label_gain": [0, 1, 3],
+            "verbose": -1,
+        }
+
+        full_train_data = lgb.Dataset(X, label=y, group=groups)
+        booster = lgb.train(
+            best_params,
+            full_train_data,
+            num_boost_round=100
+        )
+
+        return booster
+
+    def rerank_lightgbm(self, scores, preferences, labels, lgb_model):
+        """
+        Rerank scores using a trained LightGBM model.
+
+        Args:
+            scores: (num_entities,) base scores
+            preferences: entity IDs of preference feedback
+            labels: labels for preferences (1=positive, 0=negative)
+            lgb_model: trained LightGBM booster
+
+        Returns:
+            reranked_scores: (num_entities,) adjusted scores
+        """
+        features = self.extract_features(scores, preferences, labels)
+        X = features.cpu().numpy()
+        predictions = lgb_model.predict(X)
+        return torch.from_numpy(predictions).to(scores.device)

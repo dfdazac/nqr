@@ -148,24 +148,38 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
     print(f"Saved plot to {osp.join(plots_dir, output_filename)}")
 
 
+# plot_metrics_comparison(
+#     OrderedDict([
+#         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
+#         ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
+#         ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
+#     ]),
+#     output_filename="fb15k237.pdf",
+#     fig_title="FB15k-237",
+#     add_legend=True
+# )
+
 plot_metrics_comparison(
     OrderedDict([
-        ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
-        ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
-        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
+        ("Unconstrained", "results/fb15k237-betae_10_0.0002_default_test_mixed_1761210501_yfk5bmu0"),
+        ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761210367_8hb7ba9w"),
+        ("LambdaRank0", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761839940_gh5i43fe"),
+        ("LambdaRankS", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761909679_nix87y05"),
+        ("LambdaRank1", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761918930_gwbu5tb0"),
+        ("LambdaRank2", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761919932_eyo7ddxg")
     ]),
-    output_filename="fb15k237.pdf",
+    output_filename="fb15k237_1p.pdf",
     fig_title="FB15k-237",
     add_legend=True
 )
 
-plot_metrics_comparison(
-    OrderedDict([
-        ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
-        ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
-        ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
-    ]),
-    output_filename="hetionet.pdf",
-    fig_title="Hetionet",
-    add_legend=True
-)
+# plot_metrics_comparison(
+#     OrderedDict([
+#         ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
+#         ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
+#         ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
+#     ]),
+#     output_filename="hetionet.pdf",
+#     fig_title="Hetionet",
+#     add_legend=True
+# )
