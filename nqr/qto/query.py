@@ -422,44 +422,49 @@ def train_lightgbm(model, args, tasks, device, output_path):
     '''
     Train LightGBM ranker on training data
     '''
-    queries, answers, _, sessions = load_data(args, tasks, "train")
-    queries = flatten_query(queries)
-    train_dataset = TestDataset(queries, sessions, args.nentity, args.nrelation)
-    
-    test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
-    test_queries = flatten_query(test_queries)
-    test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
-    
-    if args.test_run:
-        train_dataset = torch.utils.data.Subset(train_dataset, range(10))
-        test_dataset = torch.utils.data.Subset(test_dataset, range(10))
-    
-    dataloader = DataLoader(
-        train_dataset,
-        batch_size=1,
-        num_workers=args.cpu_num,
-        collate_fn=TestDataset.collate_fn,
-        shuffle=False
-    )
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=args.test_batch_size,
-        num_workers=args.cpu_num,
-        collate_fn=TestDataset.collate_fn
-    )
-    
-    model.to(device)
-    
     tasks_str = "_".join(sorted(tasks))
     cache_filename = f"lgb_training_data_{tasks_str}.pkl"
     cache_path = osp.join(args.data_path, cache_filename)
-    
+
     if osp.exists(cache_path):
         print(f"Loading cached training data from {cache_path}...")
         with open(cache_path, 'rb') as f:
             training_data = pickle.load(f)
         print(f"Loaded {len(training_data)} training examples from cache")
     else:
+        queries, answers, _, sessions = load_data(args, tasks, "train")
+        queries = flatten_query(queries)
+        train_dataset = TestDataset(queries, sessions, args.nentity, args.nrelation)
+
+        test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
+        test_queries = flatten_query(test_queries)
+        test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
+
+        if args.test_run:
+            train_dataset = torch.utils.data.Subset(train_dataset, range(10))
+            test_dataset = torch.utils.data.Subset(test_dataset, range(10))
+        else:
+            # Limit training dataset to 10,000 samples
+            train_size = min(len(train_dataset), 10000)
+            if train_size < len(train_dataset):
+                train_dataset = torch.utils.data.Subset(train_dataset, range(train_size))
+                print(f"Limited training dataset to {train_size} samples")
+
+        dataloader = DataLoader(
+            train_dataset,
+            batch_size=1,
+            num_workers=args.cpu_num,
+            collate_fn=TestDataset.collate_fn,
+            shuffle=False
+        )
+        test_dataloader = DataLoader(
+            test_dataset,
+            batch_size=args.test_batch_size,
+            num_workers=args.cpu_num,
+            collate_fn=TestDataset.collate_fn
+        )
+
+        model.to(device)
         training_data = []
         
         print("Collecting training data for LightGBM...")
