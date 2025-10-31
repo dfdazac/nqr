@@ -436,13 +436,8 @@ def train_lightgbm(model, args, tasks, device, output_path):
         queries = flatten_query(queries)
         train_dataset = TestDataset(queries, sessions, args.nentity, args.nrelation)
 
-        test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
-        test_queries = flatten_query(test_queries)
-        test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
-
         if args.test_run:
             train_dataset = torch.utils.data.Subset(train_dataset, range(10))
-            test_dataset = torch.utils.data.Subset(test_dataset, range(10))
         else:
             # Limit training dataset to 10,000 samples
             train_size = min(len(train_dataset), 10000)
@@ -456,12 +451,6 @@ def train_lightgbm(model, args, tasks, device, output_path):
             num_workers=args.cpu_num,
             collate_fn=TestDataset.collate_fn,
             shuffle=False
-        )
-        test_dataloader = DataLoader(
-            test_dataset,
-            batch_size=args.test_batch_size,
-            num_workers=args.cpu_num,
-            collate_fn=TestDataset.collate_fn
         )
 
         model.to(device)
@@ -515,10 +504,22 @@ def train_lightgbm(model, args, tasks, device, output_path):
     model_path = osp.join(output_path, f'{wandb.run.id}-lightgbm.txt')
     lgb_model.save_model(model_path)
     print(f"Saved LightGBM model to {model_path}")
+
+    test_queries, test_hard_answers, test_easy_answers, test_sessions = load_data(args, tasks, "test")
+    test_queries = flatten_query(test_queries)
+    test_dataset = TestDataset(test_queries, test_sessions, args.nentity, args.nrelation)
+    if args.test_run:
+        test_dataset = torch.utils.data.Subset(test_dataset, range(10))
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=args.test_batch_size,
+        num_workers=args.cpu_num,
+        collate_fn=TestDataset.collate_fn
+    )
     
     all_metrics = evaluate(model, test_hard_answers, test_easy_answers, args,
-                          test_dataloader, query_name_dict, device, output_path, "test", 
-                          preference="mixed", lgb_model=lgb_model)
+                           test_dataloader, query_name_dict, device, output_path, "test",
+                           preference="mixed", lgb_model=lgb_model)
     wandb.log({f"test_{k}": v for k, v in all_metrics.items() if "cumulative" in k})
     
     return lgb_model
