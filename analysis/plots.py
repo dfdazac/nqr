@@ -65,8 +65,8 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
 
         metrics_all_methods.append([pairwise_acc, mrr_hard, hits_at_10, ndcg_at_10, ndcg_at_100])
 
-    titles = ['Pairwise Accuracy', 'MRR', 'H@10', 'NDCG@10']
-    x_start = [1, 1, 1, 1]
+    titles = ['Pairwise Accuracy', 'MRR', 'H@10', 'NDCG@10', 'NDCG@100']
+    x_start = [1, 1, 1, 1, 1]
     fig, axes = plt.subplots(1, len(titles),
                              figsize=(10, 2.85 if add_legend else 2.5))  # Increase figure size for better spacing
 
@@ -152,10 +152,11 @@ plot_metrics_comparison(
     OrderedDict([
         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
         ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
-        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw")
+        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
     ]),
     output_filename="fb15k237.pdf",
-    fig_title="FB15k-237"
+    fig_title="FB15k-237",
+    add_legend=True
 )
 
 plot_metrics_comparison(
