@@ -1,0 +1,16 @@
+# FB15k237 LightGBM train configuration
+
+# Data and model paths
+data_path: "data/hetionet"
+kbc_path: "checkpoints/hetionet/hetionet_ComplEx_Rank1000_RegN3_Lmbda0.05_W0.1/model.pt"
+
+# Model parameters
+fraction: 10
+thrshd: 0.001
+neg_scale: 6
+
+# Training settings
+do_test: true
+preference: "mixed"
+reranker: "lightgbm_lambdamart"
+checkpoint: "results/hetionet/lightgbm/train/hetionet_10_0.001_lightgbm_lambdamart_mixed_1761934274_clfxwwvu/clfxwwvu-lightgbm.txt"

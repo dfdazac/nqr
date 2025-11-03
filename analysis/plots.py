@@ -35,7 +35,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
         'Unconstrained': '#2E3440',
         'Cosine': '#85AA69',
         'RankNet': '#5E81AC',
-        'NQR': '#BF616A'
+        'LightGBM': '#BF616A'
     }
 
     colors = []
@@ -148,30 +148,31 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
     print(f"Saved plot to {osp.join(plots_dir, output_filename)}")
 
 
-# plot_metrics_comparison(
-#     OrderedDict([
-#         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
-#         ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
-#         ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
-#     ]),
-#     output_filename="fb15k237.pdf",
-#     fig_title="FB15k-237",
-#     add_legend=True
-# )
-
 plot_metrics_comparison(
     OrderedDict([
-        ("Unconstrained", "results/fb15k237-betae_10_0.0002_default_test_mixed_1761210501_yfk5bmu0"),
-        ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761210367_8hb7ba9w"),
-        ("LambdaRank0", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761839940_gh5i43fe"),
-        ("LambdaRankS", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761909679_nix87y05"),
-        ("LambdaRank1", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761918930_gwbu5tb0"),
-        ("LambdaRank2", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761919932_eyo7ddxg")
+        ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
+        ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
+        ("LightGBM", "results/fb15k237/lightgbm/test/fb15k237-betae_10_0.0002_lightgbm_lambdamart_test_mixed_1762078248_c2w6wno3"),
+        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
     ]),
-    output_filename="fb15k237_1p.pdf",
+    output_filename="fb15k237.pdf",
     fig_title="FB15k-237",
     add_legend=True
 )
+
+# plot_metrics_comparison(
+#     OrderedDict([
+#         ("Unconstrained", "results/fb15k237-betae_10_0.0002_default_test_mixed_1761210501_yfk5bmu0"),
+#         ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761210367_8hb7ba9w"),
+#         ("LambdaRank0", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761839940_gh5i43fe"),
+#         ("LambdaRankS", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761909679_nix87y05"),
+#         ("LambdaRank1", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761918930_gwbu5tb0"),
+#         ("LambdaRank2", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761919932_eyo7ddxg")
+#     ]),
+#     output_filename="fb15k237_1p.pdf",
+#     fig_title="FB15k-237",
+#     add_legend=True
+# )
 
 # plot_metrics_comparison(
 #     OrderedDict([

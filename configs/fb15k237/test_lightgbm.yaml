@@ -1,0 +1,16 @@
+# FB15k237 LightGBM test configuration
+
+# Data and model paths
+data_path: "data/fb15k237-betae"
+kbc_path: "checkpoints/fb15k237-betae/fb15k237-betae_ComplEx_Rank1000_RegN3_Lmbda0.05_W4.0/model.pt"
+
+# Model parameters
+fraction: 10
+thrshd: 0.0002
+neg_scale: 3
+
+# Training settings
+do_test: true
+preference: "mixed"
+reranker: "lightgbm_lambdamart"
+checkpoint: "results/fb15k237/lightgbm/train/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761925634_8iuzff0h/8iuzff0h-lightgbm.txt"
