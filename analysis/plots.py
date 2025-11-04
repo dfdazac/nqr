@@ -20,7 +20,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
     :param fig_title: Title for the entire figure.
     :param add_legend: Whether to add a legend to the plot.
     """
-    nature_colors = [
+    base_colors = [
         '#2E3440',
         '#85AA69',
         '#5E81AC',
@@ -33,13 +33,13 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
 
     method_color_map = {
         'Unconstrained': '#2E3440',
-        'Cosine': '#85AA69',
-        'RankNet': '#5E81AC',
-        'LightGBM': '#BF616A'
+        'Cosine': '#5E81AC',
+        'RankNet': '#BF616A',
+        'LightGBM': '#85AA69'
     }
 
     colors = []
-    available_colors = nature_colors.copy()
+    available_colors = base_colors.copy()
     for method_name in method_to_paths.keys():
         if method_name in method_color_map:
             color = method_color_map[method_name]
@@ -47,7 +47,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
             if color in available_colors:
                 available_colors.remove(color)
         else:
-            color = available_colors.pop(0) if available_colors else nature_colors[len(colors) % len(nature_colors)]
+            color = available_colors.pop(0) if available_colors else base_colors[len(colors) % len(base_colors)]
             colors.append(color)
     num_methods = len(method_to_paths)
     metrics_all_methods = []
@@ -160,27 +160,14 @@ plot_metrics_comparison(
     add_legend=True
 )
 
-# plot_metrics_comparison(
-#     OrderedDict([
-#         ("Unconstrained", "results/fb15k237-betae_10_0.0002_default_test_mixed_1761210501_yfk5bmu0"),
-#         ("Cosine", "results/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761210367_8hb7ba9w"),
-#         ("LambdaRank0", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761839940_gh5i43fe"),
-#         ("LambdaRankS", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761909679_nix87y05"),
-#         ("LambdaRank1", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761918930_gwbu5tb0"),
-#         ("LambdaRank2", "results/fb15k237-betae_10_0.0002_lightgbm_lambdamart_mixed_1761919932_eyo7ddxg")
-#     ]),
-#     output_filename="fb15k237_1p.pdf",
-#     fig_title="FB15k-237",
-#     add_legend=True
-# )
-
-# plot_metrics_comparison(
-#     OrderedDict([
-#         ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
-#         ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
-#         ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
-#     ]),
-#     output_filename="hetionet.pdf",
-#     fig_title="Hetionet",
-#     add_legend=True
-# )
+plot_metrics_comparison(
+    OrderedDict([
+        ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
+        ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
+        ("LightGBM", "results/hetionet/lightgbm/test/hetionet_10_0.001_lightgbm_lambdamart_test_mixed_1762163114_n3ae3wbh"),
+        ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
+    ]),
+    output_filename="hetionet.pdf",
+    fig_title="Hetionet",
+    add_legend=True
+)
