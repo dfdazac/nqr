@@ -13,14 +13,13 @@ import lightgbm as lgb
 import numpy as np
 from sklearn.metrics import ndcg_score
 import torch
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import scipy.stats as stats
 import wandb
 import yaml
 
-from nqr.qto.dataset import TestDataset, InfiniteDataLoaderIterator
+from nqr.qto.dataset import TestDataset
 from nqr.qto.model import KGReasoning
 from nqr.qto.util import flatten_query, set_global_seed
 
@@ -146,9 +145,9 @@ def parse_args(args=None):
     parser.add_argument("--preference", default="none", choices=["positive", "negative", "mixed", "none"],
                         help="preference type")
     parser.add_argument('--reranker',
-                        default='nqr',
+                        default='cosine',
                         type=str,
-                        choices=['default', 'cosine', 'ranknet', 'nqr', 'lightgbm_lambdamart'],
+                        choices=['default', 'cosine', 'ranknet', 'lightgbm_lambdamart'],
                         help='reranker method')
 
     # Cosine hyperparameters
@@ -158,7 +157,6 @@ def parse_args(args=None):
     parser.add_argument("--hidden_dim", default=256, type=int, help="Hidden dimension for the neural reranking network")
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"],
                         help="Activation function for the reranking network")
-    parser.add_argument("--kl_weight", default=1.0, type=float, help="kl divergence weight")
     parser.add_argument('--config', type=str, default=None, help='path to YAML config file')
 
     # Parse arguments first to get config path
@@ -374,14 +372,10 @@ def train(model, args, tasks, device, output_path):
                 (batch_preferences, batch_labels, batch_pref_ids),
                 batch_scores,
                 (batch_positives, batch_positive_ids),
-                (batch_negatives, batch_negative_ids),
-                use_nqr=args.reranker == "nqr"
+                (batch_negatives, batch_negative_ids)
             )
 
-            if args.reranker == "nqr":
-                loss = preference_loss + args.kl_weight * answer_loss
-            else:
-                loss = preference_loss + answer_loss
+            loss = preference_loss + answer_loss
 
             optimizer.zero_grad()
             loss.backward()
@@ -621,7 +615,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                         session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta)
                     elif args.reranker == "lightgbm_lambdamart":
                         session_scores = model.rerank_lightgbm(scores, preferences, labels, lgb_model)
-                    elif args.reranker in ("ranknet", "nqr"):
+                    elif args.reranker == "ranknet":
                         session_scores = model.rerank_nqr(scores, preferences, labels)
 
                     # Compute pairwise accuracy after reranking
@@ -774,7 +768,7 @@ def main(args):
     adj_list, edges_y, edges_p = read_triples([os.path.join(args.data_path, "train.txt")], args.nrelation,
                                               args.data_path)
     model = KGReasoning(args, device, adj_list, query_name_dict, name_answer_dict,
-                        use_reranker=args.reranker in ("ranknet", "nqr", "lambdamart"),
+                        use_reranker=args.reranker in ("ranknet", "lambdamart"),
                         hidden_dim=args.hidden_dim,
                         activation=args.activation)
 
@@ -795,8 +789,6 @@ def main(args):
         folder_name += f"_{args.alpha}_{args.beta}"
     elif args.reranker == "ranknet":
         folder_name += f"_{args.lr}"
-    elif args.reranker == "nqr":
-        folder_name += f"_{args.lr}_{args.kl_weight}"
     if args.do_valid:
         folder_name += "_valid"
     if args.do_test:
