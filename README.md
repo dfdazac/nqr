@@ -33,9 +33,9 @@ pip install -r requirements.txt
 
 The following are links to download:
 
-- Datasets
-- Pretrained link prediction models
-- Our raw experimental results data
+- Datasets (to do)
+- Pretrained link prediction models (to do)
+- Our raw experimental results data (to do)
 
 ### 3. Reproducing our experiments
 
