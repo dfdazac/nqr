@@ -1,5 +1,8 @@
 from collections import OrderedDict
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
 import numpy as np
 import os
 import os.path as osp
@@ -12,13 +15,14 @@ plt.rc('font', family='Nimbus Sans')
 
 
 def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, fig_title: str,
-                            add_legend: bool = False) -> None:
+                            add_legend: bool = False, split: str = 'test') -> None:
     """
     Plots metrics over time for multiple methods with 95% confidence intervals.
     :param method_to_paths: OrderedDict mapping method names to their result paths.
     :param output_filename: Name of the output file to save the plot.
     :param fig_title: Title for the entire figure.
     :param add_legend: Whether to add a legend to the plot.
+    :param split: Dataset split to use ('test' or 'valid').
     """
     base_colors = [
         '#2E3440',
@@ -54,7 +58,7 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
     method_names = method_to_paths.keys()
 
     for method, file_path in method_to_paths.items():
-        with open(osp.join(file_path, "metrics_over_time_test_mixed.pkl"), "rb") as f:
+        with open(osp.join(file_path, f"metrics_over_time_{split}_mixed.pkl"), "rb") as f:
             total_metrics_over_t_10 = p.load(f)
 
         mrr_hard = np.array(total_metrics_over_t_10['mrr_hard'])
@@ -148,6 +152,61 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
     print(f"Saved plot to {osp.join(plots_dir, output_filename)}")
 
 
+def plot_trajectory_split_by_alpha(hyperparam_to_paths: OrderedDict, output_filename: str,
+                                   fig_title: str, split: str = 'valid') -> None:
+    unique_alphas = sorted(set(a for a, _ in hyperparam_to_paths.keys()), reverse=True)
+    unique_betas = sorted(set(b for _, b in hyperparam_to_paths.keys()))
+    
+    beta_colors = {
+        -0.5: '#7b0000',
+        0.0: '#e10000',
+        0.5: '#ffc700'
+    }
+
+    fig, axes = plt.subplots(1, len(unique_alphas), figsize=(10, 3.5), sharex=True, sharey=True)
+
+    for i, alpha in enumerate(unique_alphas):
+        ax = axes[i]
+        for (a, beta), file_path in hyperparam_to_paths.items():
+            if a != alpha:
+                continue
+            with open(osp.join(file_path, f"metrics_over_time_{split}_mixed.pkl"), "rb") as f:
+                total_metrics = p.load(f)
+
+            pa = np.array(total_metrics['pairwise_accuracy']).mean(axis=0) * 100
+            mrr = np.array(total_metrics['mrr_hard']).mean(axis=0)[1:] * 100
+
+            color = beta_colors[beta]
+
+            # Trajectory line
+            ax.plot(pa, mrr, color=color, alpha=0.8, lw=2)
+            
+            # Normal circles for all timesteps except the first
+            ax.scatter(pa[1:], mrr[1:], c=[color], edgecolors=color,
+                       marker='o', s=30, linewidths=1.5, alpha=0.9)
+
+            # Highlight first timestep
+            ax.scatter(pa[0], mrr[0], marker='o', c=[color], s=30,
+                       edgecolors='black', linewidths=1.5, zorder=10)
+
+        ax.set_title(f'α = {alpha}', fontsize=13)
+        ax.grid(alpha=0.3, linestyle='--')
+        if i == 0:
+            ax.set_ylabel('MRR (%)')
+        ax.set_xlabel('Pairwise Accuracy (%)')
+        
+        if i == 0:
+            legend_handles = [plt.Line2D([0], [0], color=beta_colors[b], lw=3, 
+                                        label=f'β = {b}') for b in unique_betas]
+            ax.legend(handles=legend_handles, loc='upper left', fontsize=10)
+
+    fig.suptitle(fig_title, y=0.90)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
+    os.makedirs("plots", exist_ok=True)
+    plt.savefig(osp.join("plots", output_filename), dpi=300, bbox_inches='tight')
+    print(f"Saved plot to plots/{output_filename}")
+
+
 plot_metrics_comparison(
     OrderedDict([
         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
@@ -170,4 +229,40 @@ plot_metrics_comparison(
     output_filename="hetionet.pdf",
     fig_title="Hetionet",
     add_legend=True
+)
+
+# Trajectory plot: PA vs MRR over time for each hyperparameter combination (FB15k-237)
+plot_trajectory_split_by_alpha(
+    OrderedDict([
+        ((0.25, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_-0.5_valid_mixed_1760977590_ck0kmwly"),
+        ((0.25, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_0.0_valid_mixed_1760977591_0lp8c2o1"),
+        ((0.25, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_0.5_valid_mixed_1760977604_bvswxmfr"),
+        ((0.5, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_-0.5_valid_mixed_1760977599_5k5u9uds"),
+        ((0.5, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_0.0_valid_mixed_1760977597_hvvuw4cg"),
+        ((0.5, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_0.5_valid_mixed_1760977599_j767jdpi"),
+        ((0.75, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_-0.5_valid_mixed_1760977608_6z6x9tat"),
+        ((0.75, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_0.0_valid_mixed_1760977602_lsil13w3"),
+        ((0.75, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_0.5_valid_mixed_1760977608_9pkg2phd"),
+    ]),
+    output_filename="fb15k237_cosine_trajectory.pdf",
+    fig_title="FB15k-237",
+    split='valid'
+)
+
+# Trajectory plot: PA vs MRR over time for each hyperparameter combination (Hetionet)
+plot_trajectory_split_by_alpha(
+    OrderedDict([
+        ((0.25, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_-0.5_valid_mixed_1760977644_f30p5v18"),
+        ((0.25, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_0.0_valid_mixed_1760977644_u03ru7b6"),
+        ((0.25, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_0.5_valid_mixed_1760977647_ujf8a0vz"),
+        ((0.5, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_-0.5_valid_mixed_1760977647_zy2dhuqu"),
+        ((0.5, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_0.0_valid_mixed_1760977651_dezss4c8"),
+        ((0.5, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_0.5_valid_mixed_1760977647_i3p0imm0"),
+        ((0.75, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_-0.5_valid_mixed_1760977653_q835wxra"),
+        ((0.75, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_0.0_valid_mixed_1760977649_6226hm3d"),
+        ((0.75, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_0.5_valid_mixed_1760977654_y4vqplf6"),
+    ]),
+    output_filename="hetionet_cosine_trajectory.pdf",
+    fig_title="Hetionet",
+    split='valid'
 )
