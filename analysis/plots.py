@@ -65,8 +65,8 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
 
         metrics_all_methods.append([pairwise_acc, mrr_hard, hits_at_10, ndcg_at_10, ndcg_at_100])
 
-    titles = ['Pairwise Accuracy', 'MRR', 'H@10', 'NDCG@10', 'NDCG@100']
-    x_start = [1, 1, 1, 1, 1]
+    titles = ['Pairwise Accuracy', 'MRR', 'H@10', 'NDCG@10']
+    x_start = [1, 1, 1, 1]
     fig, axes = plt.subplots(1, len(titles),
                              figsize=(10, 2.85 if add_legend else 2.5))  # Increase figure size for better spacing
 
@@ -151,21 +151,21 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
 plot_metrics_comparison(
     OrderedDict([
         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
-        ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
         ("LightGBM", "results/fb15k237/lightgbm/test/fb15k237-betae_10_0.0002_lightgbm_lambdamart_test_mixed_1762078248_c2w6wno3"),
-        ("RankNet", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
+        ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
+        ("NQR", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
     ]),
     output_filename="fb15k237.pdf",
     fig_title="FB15k-237",
-    add_legend=True
+    add_legend=False
 )
 
 plot_metrics_comparison(
     OrderedDict([
         ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
-        ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
         ("LightGBM", "results/hetionet/lightgbm/test/hetionet_10_0.001_lightgbm_lambdamart_test_mixed_1762163114_n3ae3wbh"),
-        ("RankNet", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
+        ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
+        ("NQR", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
     ]),
     output_filename="hetionet.pdf",
     fig_title="Hetionet",
