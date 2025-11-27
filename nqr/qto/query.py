@@ -116,6 +116,7 @@ def parse_args(args=None):
     parser.add_argument('--notes', default=None, type=str, help="notes for wandb")
     parser.add_argument('--test_run', action='store_true', help="run on a small dataset")
     parser.add_argument('--save_scores', action='store_true', help="save query scores for all entities")
+    parser.add_argument('--verbose', action='store_true', help="enable verbose debug output during evaluation")
 
     parser.add_argument('--num_epochs', default=1000, type=int, help='number of training epochs')
     parser.add_argument('--valid_frequency', default=5000, type=int, help='validation frequency in training steps')
@@ -158,6 +159,7 @@ def parse_args(args=None):
     parser.add_argument("--activation", default="relu", choices=["relu", "elu"],
                         help="Activation function for the reranking network")
     parser.add_argument('--config', type=str, default=None, help='path to YAML config file')
+    parser.add_argument('--profile_time', action='store_true', help="profile execution time of rerankers")
 
     # Parse arguments first to get config path
     parsed_args = parser.parse_args(args)
@@ -544,15 +546,34 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
     total_metrics_over_10_steps = defaultdict(list)
     query_to_ranking = defaultdict(dict)
+
+    with open(osp.join(args.data_path, "id2ent.pkl"), "rb") as f:
+        id2ent = pickle.load(f)
+    with open(osp.join(args.data_path, "id2rel.pkl"), "rb") as f:
+        id2rel = pickle.load(f)
+    with open(osp.join(args.data_path, "entity2text.txt")) as f:
+        ent2text = dict()
+        for line in f:
+            key, value = line.strip().split("\t")
+            ent2text[key] = value
+
+    execution_times = []
+
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader,
                                                                   desc=f"Evaluating on {mode} - preference: {preference}",
-                                                                  mininterval=1):
+                                                                  mininterval=1,
+                                                                  disable=True):
         sessions = sessions[0]
         if evaluate_preferences and len(sessions) == 0:
             raise ValueError("No sessions found for query")
-
+        anchor = ent2text[id2ent[flat_queries[0][0]]]
+        relations = [id2rel[i] for i in flat_queries[0][1:]]
         flat_queries = torch.as_tensor(flat_queries, device=device, dtype=torch.long)
+
+        query_start_time = time.time()
         scores, _, exec_query = model.embed_query(flat_queries, query_structures[0], 0)
+        query_time = time.time() - query_start_time
+
         scores = scores.squeeze()
         initial_metrics = compute_metrics(scores, hard_answers, easy_answers, queries)
 
@@ -565,11 +586,43 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
         if evaluate_preferences:
             query_easy_answers = list(easy_answers[queries[0]])
             query_hard_answers = list(hard_answers[queries[0]])
+
+            if args.verbose:
+                last_relation = relations[-1]
+                if last_relation != '+/award/award_nominee/award_nominations./award/award_nomination/award':
+                    continue
+                print("======== ANCHOR ==========")
+                print(anchor)
+                print("=============================\n")
+
+                print("======== RELATIONS ==========")
+                print(relations)
+                print("=============================\n")
+
+                print("======== TOP-10 answers ==========")
+                print([ent2text[id2ent[i]] for i in scores.topk(10).indices.tolist()])
+                print("=============================\n")
+
+                cont = input("Enter y to continue, other to skip")
+
+                if not cont == 'y':
+                    continue
+
             for session in sessions:
                 session_count += 1
                 # session_scores = scores.clone()
 
                 positives, negatives = session
+
+                if args.verbose:
+                    print("======== POSITIVES ==========")
+                    print([ent2text[id2ent[i]] for i in positives])
+                    print("=============================\n")
+
+                    print("======== NEGATIVES ==========")
+                    print([ent2text[id2ent[i]] for i in negatives])
+                    print("=============================\n")
+
                 relevance_scores = torch.zeros_like(scores, dtype=torch.long)
                 relevance_scores[negatives] = 1
                 relevance_scores[positives] = 2
@@ -584,7 +637,13 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 # Slice to filtered candidates: hard answers + all remaining unknowns
                 rel_eval = relevance_scores[keep_mask].unsqueeze(0).cpu()
                 scores_eval = scores[keep_mask].unsqueeze(0).cpu()
+
+                if args.verbose:
+                    print("======== BASE METRICS ==========")
                 base_metrics.update(compute_ndcg(rel_eval, scores_eval))
+                if args.verbose:
+                    print(base_metrics)
+                    print("=============================\n")
 
                 if preference == "positive":
                     session_feedback = positives[:10]
@@ -603,20 +662,42 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
                 cumulative_metrics = defaultdict(float)
                 metrics_over_10_steps = defaultdict(list)
-                for t in range(len(session_feedback)):
+
+                # Determine range based on profiling mode
+                if args.profile_time:
+                    # Only execute the last iteration for profiling
+                    range_start = len(session_feedback) - 1
+                    range_end = len(session_feedback)
+                else:
+                    range_start = 0
+                    range_end = len(session_feedback)
+
+                for t in range(range_start, range_end):
                     # Rerank embedding scores based on preferences
                     preferences = torch.tensor(session_feedback[:t + 1], device=device)
                     labels = torch.tensor(session_labels[:t + 1], device=device)
+
+                    # Start timing measurement for profiling
+                    if args.profile_time:
+                        start_time = time.time()
+
                     if args.reranker == "default":
-                        session_scores = scores.clone()
-                        answers = torch.tensor(positives + negatives)
-                        session_scores[answers] = session_scores[answers].sort(descending=True).values
+                        session_scores = scores
                     elif args.reranker == "cosine":
                         session_scores = model.rerank_cosine(scores, preferences, labels, args.alpha, args.beta)
                     elif args.reranker == "lightgbm_lambdamart":
                         session_scores = model.rerank_lightgbm(scores, preferences, labels, lgb_model)
                     elif args.reranker == "ranknet":
                         session_scores = model.rerank_nqr(scores, preferences, labels)
+
+                    # End timing measurement for profiling
+                    if args.profile_time:
+                        execution_times.append(time.time() - start_time + query_time)
+
+                    if t == 6 and args.verbose:
+                        print("======== NEW TOP 10 ==========")
+                        print([ent2text[id2ent[i]] for i in session_scores.topk(10).indices.tolist()])
+                        print("=============================\n")
 
                     # Compute pairwise accuracy after reranking
                     pos_scores = session_scores[positives].unsqueeze(1)
@@ -627,6 +708,11 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     instant_metrics = compute_metrics(session_scores, hard_answers, easy_answers, queries)
                     scores_eval = session_scores[keep_mask].unsqueeze(0).cpu()
                     instant_metrics.update(compute_ndcg(rel_eval, scores_eval))
+
+                    if t == 4 and args.verbose:
+                        print("======== METRICS ==========")
+                        print(instant_metrics)
+                        print("=============================\n")
 
                     for metric in instant_metrics:
                         if metric.startswith('num'):
@@ -712,6 +798,19 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
         with open(osp.join(output_path, f'metrics_over_time_{mode}_{preference}.pkl'), 'wb') as f:
             pickle.dump(total_metrics_over_10_steps, f)
+
+    # Save timing results if profiling was enabled
+    if args.profile_time and execution_times:
+        with open(osp.join(output_path, f'execution_times_{mode}_{preference}_{args.reranker}.txt'), 'w') as f:
+            f.write(
+                f"Execution times for reranker '{args.reranker}' in {mode} mode with {preference} preference:\n")
+            f.write(f"Total queries: {len(execution_times)}\n")
+            f.write(f"Average time: {sum(execution_times) / len(execution_times):.6f} seconds\n")
+            f.write(f"Min time: {min(execution_times):.6f} seconds\n")
+            f.write(f"Max time: {max(execution_times):.6f} seconds\n")
+            f.write("\nIndividual execution times (seconds):\n")
+            for i, exec_time in enumerate(execution_times):
+                f.write(f"{i + 1}: {exec_time:.6f}\n")
 
     return all_metrics
 

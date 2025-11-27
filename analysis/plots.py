@@ -69,10 +69,11 @@ def plot_metrics_comparison(method_to_paths: OrderedDict, output_filename: str, 
 
         metrics_all_methods.append([pairwise_acc, mrr_hard, hits_at_10, ndcg_at_10, ndcg_at_100])
 
-    titles = ['Pairwise Accuracy', 'MRR', 'H@10', 'NDCG@10']
+    titles = ['Pairwise Accuracy', 'MRR', 'NDCG@10']
+    titles = ['Pairwise Accuracy', 'MRR', 'NDCG@10']
     x_start = [1, 1, 1, 1]
     fig, axes = plt.subplots(1, len(titles),
-                             figsize=(10, 2.85 if add_legend else 2.5))  # Increase figure size for better spacing
+                             figsize=(8, 2.5 if add_legend else 2.0))  # Increase figure size for better spacing
 
     for ax, title, metric_idx in zip(axes, titles, range(len(titles))):
         num_timesteps = max([metrics_all_methods[i][metric_idx].shape[1] for i in range(num_methods)])
