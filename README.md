@@ -1,21 +1,10 @@
 # Query Answering with Soft Entity Constraints
 
-This is the code repository accompanying the paper [Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints](https://arxiv.org/abs/2508.13663).
+This is the code repository accompanying the paper Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints.
 
 Logical queries over knowledge graphs allow retrieving entities that meet constraints defined by logical formulas. In this project, we extend these with **soft constraints** that allow specifying that in addition to the logical constraints, an entity should be "like" or "unlike" specific exemplary entities:
 
 ![](img/soft-constraints.png)
-
-If you find our work useful, please use the following citation:
-
-```bib
-@article{daza2025interactive,
-  title={Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints},
-  author={Daza, Daniel and Bernardi, Alberto and Costabello, Luca and Gueret, Christophe and Mansoury, Masoud and Cochez, Michael and Schut, Martijn},
-  journal={arXiv preprint arXiv:2508.13663},
-  year={2025}
-}
-```
 
 ## Replicating our experiments
 
