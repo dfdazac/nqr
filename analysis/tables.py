@@ -89,6 +89,21 @@ print_latex_rows(process_files(fb15k237_results, "cumulative_mrr_hard"))
 print("Cumulative NDCG@10:")
 print_latex_rows(process_files(fb15k237_results, "cumulative_ndcg@10"))
 
+fb15k237_annotated_results = OrderedDict([
+    ("Unconstrained", "results/fb15k237/unconstrained/test-annotated/fb15k237-betae_10_0.0002_default_test_mixed_1773580568_8fklt3f3"),
+    ("LightGBM", "results/fb15k237/lightgbm/test-annotated/fb15k237-betae_10_0.0002_lightgbm_lambdamart_test_mixed_1773580922_94ffp3bn"),
+    ("Cosine", "results/fb15k237/cosine/test-annotated/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1773580653_myewf0el"),
+    ("NQR", "results/fb15k237/ranknet/test-annotated/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1773581120_2gj4rjkl"),
+])
+
+print("=== FB15k237 Annotated ===")
+print("Cumulative Pairwise Accuracy:")
+print_latex_rows(process_files(fb15k237_annotated_results, "cumulative_pairwise_accuracy"))
+print("Cumulative MRR Hard:")
+print_latex_rows(process_files(fb15k237_annotated_results, "cumulative_mrr_hard"))
+print("Cumulative NDCG@10:")
+print_latex_rows(process_files(fb15k237_annotated_results, "cumulative_ndcg@10"))
+
 hetionet_results = OrderedDict([
     ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
     ("LightGBM", "results/hetionet/lightgbm/test/hetionet_10_0.001_lightgbm_lambdamart_test_mixed_1762163114_n3ae3wbh"),

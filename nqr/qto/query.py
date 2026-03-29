@@ -10,6 +10,7 @@ import time
 from pprint import pprint
 
 import lightgbm as lgb
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import ndcg_score
 import torch
@@ -21,7 +22,7 @@ import yaml
 
 from nqr.qto.dataset import TestDataset
 from nqr.qto.model import KGReasoning
-from nqr.qto.util import flatten_query, set_global_seed
+from nqr.qto.util import flatten, flatten_query, set_global_seed
 
 query_name_dict = {('e', ('r',)): '1p',
                    ('e', ('r', 'r')): '2p',
@@ -110,6 +111,7 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true', help="do train")
     parser.add_argument('--do_valid', action='store_true', help="do valid")
     parser.add_argument('--do_test', action='store_true', help="do test")
+    parser.add_argument('--test_annotated', action='store_true', help="test annotated sessions")
     parser.add_argument('--do_cp', action='store_true', help="do cardinality prediction")
     parser.add_argument('--path', action='store_true', help="do interpretation study")
     parser.add_argument('--wandb', action='store_true', help="log to wandb")
@@ -260,6 +262,59 @@ def compute_metrics(embedding, hard_answers, easy_answers, queries_unflatten):
         'hits@10_easy': h10_easy,
         'num_easy_answer': num_easy,
     }
+
+
+def find_rerank_regressions(base_scores, reranked_scores, easy_answers, hard_answers, top_k=5):
+    correct_answers = set(easy_answers) | set(hard_answers)
+    if not correct_answers:
+        return []
+
+    device = base_scores.device
+    nentity = base_scores.shape[0]
+    correct_indices = torch.tensor(sorted(correct_answers), device=device, dtype=torch.long)
+    correct_mask = torch.zeros(nentity, dtype=torch.bool, device=device)
+    correct_mask[correct_indices] = True
+
+    def get_positions_and_incorrect_above(scores):
+        order = torch.argsort(scores, dim=-1, descending=True)
+        positions = torch.empty_like(order)
+        positions[order] = torch.arange(order.numel(), device=device)
+
+        incorrect_prefix = torch.cumsum((~correct_mask[order]).to(torch.long), dim=0)
+        incorrect_above_sorted = incorrect_prefix - (~correct_mask[order]).to(torch.long)
+        incorrect_above = torch.empty_like(incorrect_above_sorted)
+        incorrect_above[order] = incorrect_above_sorted
+        return positions, incorrect_above
+
+    base_positions, base_incorrect_above = get_positions_and_incorrect_above(base_scores)
+    reranked_positions, reranked_incorrect_above = get_positions_and_incorrect_above(reranked_scores)
+
+    incorrect_above_delta = reranked_incorrect_above[correct_indices] - base_incorrect_above[correct_indices]
+    position_drop = reranked_positions[correct_indices] - base_positions[correct_indices]
+    harmed_mask = incorrect_above_delta > 0
+
+    if not harmed_mask.any():
+        return []
+
+    harmed_entities = correct_indices[harmed_mask]
+    harmed_scores = reranked_scores[harmed_entities]
+    harmed_order = torch.argsort(harmed_scores, descending=True)[:top_k]
+
+    regressions = []
+    for idx in harmed_order.tolist():
+        entity_id = harmed_entities[idx].item()
+        regressions.append({
+            "entity_id": entity_id,
+            "base_rank": base_positions[entity_id].item() + 1,
+            "reranked_rank": reranked_positions[entity_id].item() + 1,
+            "position_drop": position_drop[harmed_mask][idx].item(),
+            "base_incorrect_above": base_incorrect_above[entity_id].item(),
+            "reranked_incorrect_above": reranked_incorrect_above[entity_id].item(),
+            "incorrect_above_delta": incorrect_above_delta[harmed_mask][idx].item(),
+            "reranked_score": reranked_scores[entity_id].item(),
+        })
+
+    return regressions
 
 
 def train(model, args, tasks, device, output_path):
@@ -546,6 +601,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
 
     total_metrics_over_10_steps = defaultdict(list)
     query_to_ranking = defaultdict(dict)
+    alpha_plot_saved = False
 
     with open(osp.join(args.data_path, "id2ent.pkl"), "rb") as f:
         id2ent = pickle.load(f)
@@ -562,12 +618,16 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
     for flat_queries, queries, query_structures, sessions in tqdm(dataloader,
                                                                   desc=f"Evaluating on {mode} - preference: {preference}",
                                                                   mininterval=1,
-                                                                  disable=True):
+                                                                  disable=args.verbose):
         sessions = sessions[0]
+
         if evaluate_preferences and len(sessions) == 0:
             raise ValueError("No sessions found for query")
-        anchor = ent2text[id2ent[flat_queries[0][0]]]
-        relations = [id2rel[i] for i in flat_queries[0][1:]]
+        flat_structure = flatten(query_structures[0])
+        entity_ids = [value for value, kind in zip(flat_queries[0], flat_structure) if kind == "e"]
+        relation_ids = [value for value, kind in zip(flat_queries[0], flat_structure) if kind == "r"]
+        anchor = ent2text[id2ent[entity_ids[0]]]
+        relations = [id2rel[i] for i in relation_ids]
         flat_queries = torch.as_tensor(flat_queries, device=device, dtype=torch.long)
 
         query_start_time = time.time()
@@ -694,9 +754,31 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     if args.profile_time:
                         execution_times.append(time.time() - start_time + query_time)
 
-                    if t == 6 and args.verbose:
+                    if t == 2 and args.verbose:
                         print("======== NEW TOP 10 ==========")
                         print([ent2text[id2ent[i]] for i in session_scores.topk(10).indices.tolist()])
+                        print("=============================\n")
+
+                        regressions = find_rerank_regressions(
+                            scores,
+                            session_scores,
+                            query_easy_answers,
+                            query_hard_answers,
+                            top_k=5,
+                        )
+                        print("======== CORRECT ANSWERS HARMED BY RERANKING ==========")
+                        if regressions:
+                            for regression in regressions:
+                                entity_name = ent2text[id2ent[regression["entity_id"]]]
+                                print(
+                                    f'{entity_name} | reranked score={regression["reranked_score"]:.4f} | '
+                                    f'rank {regression["base_rank"]}->{regression["reranked_rank"]} '
+                                    f'({regression["position_drop"]:+d}) | incorrect above '
+                                    f'{regression["base_incorrect_above"]}->{regression["reranked_incorrect_above"]} '
+                                    f'({regression["incorrect_above_delta"]:+d})'
+                                )
+                        else:
+                            print("None")
                         print("=============================\n")
 
                     # Compute pairwise accuracy after reranking
@@ -709,7 +791,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                     scores_eval = session_scores[keep_mask].unsqueeze(0).cpu()
                     instant_metrics.update(compute_ndcg(rel_eval, scores_eval))
 
-                    if t == 4 and args.verbose:
+                    if t == 2 and args.verbose:
                         print("======== METRICS ==========")
                         print(instant_metrics)
                         print("=============================\n")
@@ -826,11 +908,15 @@ def load_data(args, tasks, split):
     else:
         hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
         easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
-    sessions_path = osp.join(args.data_path, f"{split}-sessions.pkl")
+
+    annotated_test_sessions_str = "-annotated" if args.test_annotated else ""
+    sessions_path = osp.join(args.data_path, f"{split}-sessions{annotated_test_sessions_str}.pkl")
     if osp.exists(sessions_path):
-        sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
+        sessions = pickle.load(open(sessions_path, "rb"))
     else:
         sessions = dict()
+
+    print(f"Loaded {len(sessions)} sessions from {sessions_path}")
 
     query_structures = list(queries.keys())
     for structure in query_structures:

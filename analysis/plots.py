@@ -208,62 +208,78 @@ def plot_trajectory_split_by_alpha(hyperparam_to_paths: OrderedDict, output_file
     print(f"Saved plot to plots/{output_filename}")
 
 
-plot_metrics_comparison(
-    OrderedDict([
-        ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
-        ("LightGBM", "results/fb15k237/lightgbm/test/fb15k237-betae_10_0.0002_lightgbm_lambdamart_test_mixed_1762078248_c2w6wno3"),
-        ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
-        ("NQR", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
-    ]),
-    output_filename="fb15k237.pdf",
-    fig_title="FB15k-237",
-    add_legend=False
-)
+# plot_metrics_comparison(
+#     OrderedDict([
+#         ("Unconstrained", "results/fb15k237/unconstrained/test/fb15k237-betae_10_0.0002_default_test_mixed_1760968758_073xj415"),
+#         ("LightGBM", "results/fb15k237/lightgbm/test/fb15k237-betae_10_0.0002_lightgbm_lambdamart_test_mixed_1762078248_c2w6wno3"),
+#         ("Cosine", "results/fb15k237/cosine/test/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1761037498_fvwjmdjs"),
+#         ("NQR", "results/fb15k237/ranknet/test/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1761053698_5fpk3jiw"),
+#     ]),
+#     output_filename="fb15k237.pdf",
+#     fig_title="FB15k-237",
+#     add_legend=False
+# )
 
 plot_metrics_comparison(
     OrderedDict([
-        ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
-        ("LightGBM", "results/hetionet/lightgbm/test/hetionet_10_0.001_lightgbm_lambdamart_test_mixed_1762163114_n3ae3wbh"),
-        ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
-        ("NQR", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
+        ("Unconstrained",
+         "results/fb15k237/unconstrained/test-annotated/fb15k237-betae_10_0.0002_default_test_mixed_1773580568_8fklt3f3"),
+        ("LightGBM",
+         "results/fb15k237/lightgbm/test-annotated/fb15k237-betae_10_0.0002_lightgbm_lambdamart_test_mixed_1773580922_94ffp3bn"),
+        ("Cosine",
+         "results/fb15k237/cosine/test-annotated/fb15k237-betae_10_0.0002_cosine_0.25_0.5_test_mixed_1773580653_myewf0el"),
+        ("NQR",
+         "results/fb15k237/ranknet/test-annotated/fb15k237-betae_10_0.0002_ranknet_0.001_test_mixed_1773581120_2gj4rjkl"),
     ]),
-    output_filename="hetionet.pdf",
-    fig_title="Hetionet",
+    output_filename="fb15k237-annotated.pdf",
+    fig_title="Annotated FB15k-237",
     add_legend=True
 )
 
-# Trajectory plot: PA vs MRR over time for each hyperparameter combination (FB15k-237)
-plot_trajectory_split_by_alpha(
-    OrderedDict([
-        ((0.25, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_-0.5_valid_mixed_1760977590_ck0kmwly"),
-        ((0.25, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_0.0_valid_mixed_1760977591_0lp8c2o1"),
-        ((0.25, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_0.5_valid_mixed_1760977604_bvswxmfr"),
-        ((0.5, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_-0.5_valid_mixed_1760977599_5k5u9uds"),
-        ((0.5, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_0.0_valid_mixed_1760977597_hvvuw4cg"),
-        ((0.5, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_0.5_valid_mixed_1760977599_j767jdpi"),
-        ((0.75, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_-0.5_valid_mixed_1760977608_6z6x9tat"),
-        ((0.75, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_0.0_valid_mixed_1760977602_lsil13w3"),
-        ((0.75, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_0.5_valid_mixed_1760977608_9pkg2phd"),
-    ]),
-    output_filename="fb15k237_cosine_trajectory.pdf",
-    fig_title="FB15k-237",
-    split='valid'
-)
-
-# Trajectory plot: PA vs MRR over time for each hyperparameter combination (Hetionet)
-plot_trajectory_split_by_alpha(
-    OrderedDict([
-        ((0.25, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_-0.5_valid_mixed_1760977644_f30p5v18"),
-        ((0.25, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_0.0_valid_mixed_1760977644_u03ru7b6"),
-        ((0.25, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_0.5_valid_mixed_1760977647_ujf8a0vz"),
-        ((0.5, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_-0.5_valid_mixed_1760977647_zy2dhuqu"),
-        ((0.5, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_0.0_valid_mixed_1760977651_dezss4c8"),
-        ((0.5, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_0.5_valid_mixed_1760977647_i3p0imm0"),
-        ((0.75, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_-0.5_valid_mixed_1760977653_q835wxra"),
-        ((0.75, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_0.0_valid_mixed_1760977649_6226hm3d"),
-        ((0.75, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_0.5_valid_mixed_1760977654_y4vqplf6"),
-    ]),
-    output_filename="hetionet_cosine_trajectory.pdf",
-    fig_title="Hetionet",
-    split='valid'
-)
+# plot_metrics_comparison(
+#     OrderedDict([
+#         ("Unconstrained", "results/hetionet/unconstrained/test/hetionet_10_0.001_default_test_mixed_1760975302_nblg4ymc"),
+#         ("LightGBM", "results/hetionet/lightgbm/test/hetionet_10_0.001_lightgbm_lambdamart_test_mixed_1762163114_n3ae3wbh"),
+#         ("Cosine", "results/hetionet/cosine/test/hetionet_10_0.001_cosine_0.25_0.5_test_mixed_1761037524_0fys9umr"),
+#         ("NQR", "results/hetionet/ranknet/test/hetionet_10_0.001_ranknet_0.001_test_mixed_1761056339_3ekqazqe")
+#     ]),
+#     output_filename="hetionet.pdf",
+#     fig_title="Hetionet",
+#     add_legend=True
+# )
+#
+# # Trajectory plot: PA vs MRR over time for each hyperparameter combination (FB15k-237)
+# plot_trajectory_split_by_alpha(
+#     OrderedDict([
+#         ((0.25, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_-0.5_valid_mixed_1760977590_ck0kmwly"),
+#         ((0.25, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_0.0_valid_mixed_1760977591_0lp8c2o1"),
+#         ((0.25, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.25_0.5_valid_mixed_1760977604_bvswxmfr"),
+#         ((0.5, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_-0.5_valid_mixed_1760977599_5k5u9uds"),
+#         ((0.5, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_0.0_valid_mixed_1760977597_hvvuw4cg"),
+#         ((0.5, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.5_0.5_valid_mixed_1760977599_j767jdpi"),
+#         ((0.75, -0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_-0.5_valid_mixed_1760977608_6z6x9tat"),
+#         ((0.75, 0.0), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_0.0_valid_mixed_1760977602_lsil13w3"),
+#         ((0.75, 0.5), "results/fb15k237/cosine/valid/fb15k237-betae_10_0.0002_cosine_0.75_0.5_valid_mixed_1760977608_9pkg2phd"),
+#     ]),
+#     output_filename="fb15k237_cosine_trajectory.pdf",
+#     fig_title="FB15k-237",
+#     split='valid'
+# )
+#
+# # Trajectory plot: PA vs MRR over time for each hyperparameter combination (Hetionet)
+# plot_trajectory_split_by_alpha(
+#     OrderedDict([
+#         ((0.25, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_-0.5_valid_mixed_1760977644_f30p5v18"),
+#         ((0.25, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_0.0_valid_mixed_1760977644_u03ru7b6"),
+#         ((0.25, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.25_0.5_valid_mixed_1760977647_ujf8a0vz"),
+#         ((0.5, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_-0.5_valid_mixed_1760977647_zy2dhuqu"),
+#         ((0.5, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_0.0_valid_mixed_1760977651_dezss4c8"),
+#         ((0.5, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.5_0.5_valid_mixed_1760977647_i3p0imm0"),
+#         ((0.75, -0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_-0.5_valid_mixed_1760977653_q835wxra"),
+#         ((0.75, 0.0), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_0.0_valid_mixed_1760977649_6226hm3d"),
+#         ((0.75, 0.5), "results/hetionet/cosine/valid/hetionet_10_0.001_cosine_0.75_0.5_valid_mixed_1760977654_y4vqplf6"),
+#     ]),
+#     output_filename="hetionet_cosine_trajectory.pdf",
+#     fig_title="Hetionet",
+#     split='valid'
+# )

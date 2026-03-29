@@ -29,7 +29,7 @@ conda activate nqr
 pip install -r requirements.txt
 ```
 
-### 2. Download the data
+### 2. Download data and pretrained models
 
 The following are available upon request:
 
