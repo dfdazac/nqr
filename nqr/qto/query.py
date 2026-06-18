@@ -21,7 +21,7 @@ import yaml
 
 from nqr.qto.dataset import TestDataset
 from nqr.qto.model import KGReasoning
-from nqr.qto.util import flatten_query, set_global_seed
+from nqr.qto.util import flatten, flatten_query, set_global_seed
 
 query_name_dict = {('e', ('r',)): '1p',
                    ('e', ('r', 'r')): '2p',
@@ -110,6 +110,7 @@ def parse_args(args=None):
     parser.add_argument('--do_train', action='store_true', help="do train")
     parser.add_argument('--do_valid', action='store_true', help="do valid")
     parser.add_argument('--do_test', action='store_true', help="do test")
+    parser.add_argument('--test_annotated', action='store_true', help="test annotated sessions")
     parser.add_argument('--do_cp', action='store_true', help="do cardinality prediction")
     parser.add_argument('--path', action='store_true', help="do interpretation study")
     parser.add_argument('--wandb', action='store_true', help="log to wandb")
@@ -564,10 +565,14 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                                                                   mininterval=1,
                                                                   disable=True):
         sessions = sessions[0]
+
         if evaluate_preferences and len(sessions) == 0:
             raise ValueError("No sessions found for query")
-        anchor = ent2text[id2ent[flat_queries[0][0]]]
-        relations = [id2rel[i] for i in flat_queries[0][1:]]
+        flat_structure = flatten(query_structures[0])
+        entity_ids = [value for value, kind in zip(flat_queries[0], flat_structure) if kind == "e"]
+        relation_ids = [value for value, kind in zip(flat_queries[0], flat_structure) if kind == "r"]
+        anchor = ent2text[id2ent[entity_ids[0]]]
+        relations = [id2rel[i] for i in relation_ids]
         flat_queries = torch.as_tensor(flat_queries, device=device, dtype=torch.long)
 
         query_start_time = time.time()
@@ -612,7 +617,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 session_count += 1
                 # session_scores = scores.clone()
 
-                positives, negatives = session
+                positives, negatives, *_ = session
 
                 if args.verbose:
                     print("======== POSITIVES ==========")
@@ -826,11 +831,15 @@ def load_data(args, tasks, split):
     else:
         hard_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-hard-answers.pkl"), 'rb'))
         easy_answers = pickle.load(open(os.path.join(args.data_path, f"{split}-easy-answers.pkl"), 'rb'))
-    sessions_path = osp.join(args.data_path, f"{split}-sessions.pkl")
+
+    annotated_test_sessions_str = "-annotated" if args.test_annotated else ""
+    sessions_path = osp.join(args.data_path, f"{split}-sessions{annotated_test_sessions_str}.pkl")
     if osp.exists(sessions_path):
-        sessions = pickle.load(open(os.path.join(args.data_path, f"{split}-sessions.pkl"), "rb"))
+        sessions = pickle.load(open(sessions_path, "rb"))
     else:
         sessions = dict()
+
+    print(f"Loaded {len(sessions)} sessions from {sessions_path}")
 
     query_structures = list(queries.keys())
     for structure in query_structures:
