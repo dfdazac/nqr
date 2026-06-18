@@ -6,6 +6,20 @@ Logical queries over knowledge graphs allow retrieving entities that meet constr
 
 ![](img/soft-constraints.png)
 
+If you find our work interesting, please use the following citation:
+
+```bibtex
+@article{
+daza2026interactive,
+title={Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints},
+author={Daniel Daza and Alberto Bernardi and Luca Costabello and Christophe Gueret and Masoud Mansoury and Michael Cochez and M.C. Schut},
+journal={Transactions on Machine Learning Research},
+issn={2835-8856},
+year={2026},
+url={https://openreview.net/forum?id=Qb6vIM7MxE}
+}
+```
+
 ## Replicating our experiments
 
 ### 1. Installation
