@@ -1,19 +1,22 @@
 # Query Answering with Soft Entity Constraints
 
-This is the code repository accompanying the paper [Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints](https://arxiv.org/abs/2508.13663).
+This is the code repository accompanying the paper Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints.
 
 Logical queries over knowledge graphs allow retrieving entities that meet constraints defined by logical formulas. In this project, we extend these with **soft constraints** that allow specifying that in addition to the logical constraints, an entity should be "like" or "unlike" specific exemplary entities:
 
 ![](img/soft-constraints.png)
 
-If you find our work useful, please use the following citation:
+If you find our work interesting, please use the following citation:
 
-```bib
-@article{daza2025interactive,
-  title={Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints},
-  author={Daza, Daniel and Bernardi, Alberto and Costabello, Luca and Gueret, Christophe and Mansoury, Masoud and Cochez, Michael and Schut, Martijn},
-  journal={arXiv preprint arXiv:2508.13663},
-  year={2025}
+```bibtex
+@article{
+daza2026interactive,
+title={Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints},
+author={Daniel Daza and Alberto Bernardi and Luca Costabello and Christophe Gueret and Masoud Mansoury and Michael Cochez and M.C. Schut},
+journal={Transactions on Machine Learning Research},
+issn={2835-8856},
+year={2026},
+url={https://openreview.net/forum?id=Qb6vIM7MxE}
 }
 ```
 
@@ -31,11 +34,38 @@ pip install -r requirements.txt
 
 ### 2. Download data and pretrained models
 
-The following are available upon request:
+In our work, we introduce query-answering datasets extended with soft entity constraints. We provide these datasets on Zenodo:
 
-- Datasets
-- Pretrained link prediction models
-- Our raw experimental results data
+https://doi.org/10.5281/zenodo.20847352
+
+Download and extract the dataset archives from the repository root:
+
+- `fb15k237-betae.tar.gz`
+- `hetionet.tar.gz`
+
+```bash
+mkdir -p data
+
+tar xzf fb15k237-betae.tar.gz -C data
+tar xzf hetionet.tar.gz -C data
+```
+
+The same Zenodo record also contains pretrained artifacts and raw experimental results, which can be used to reproduce the experiments and figures without retraining:
+
+- `fb15k237-betae_10_0.0002_nonforced.tar.gz`
+- `hetionet_10_0.001_nonforced.tar.gz`
+- `results.tar.gz`
+
+Extract them with:
+
+```bash
+mkdir -p neural_adj
+
+tar xzf fb15k237-betae_10_0.0002_nonforced.tar.gz -C neural_adj
+tar xzf hetionet_10_0.001_nonforced.tar.gz -C neural_adj
+
+tar xzf results.tar.gz
+```
 
 ### 3. Reproducing our experiments
 

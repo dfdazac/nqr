@@ -672,7 +672,7 @@ def evaluate(model: KGReasoning, hard_answers, easy_answers, args, dataloader, q
                 session_count += 1
                 # session_scores = scores.clone()
 
-                positives, negatives = session
+                positives, negatives, *_ = session
 
                 if args.verbose:
                     print("======== POSITIVES ==========")
