@@ -2,6 +2,10 @@
 
 This is the code repository accompanying the paper Interactive Query Answering on Knowledge Graphs with Soft Entity Constraints.
 
+[Paper](https://openreview.net/forum?id=Qb6vIM7MxE) | [Artifacts](https://doi.org/10.5281/zenodo.20847352)
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20847352.svg)](https://doi.org/10.5281/zenodo.20847352)
+
 Logical queries over knowledge graphs allow retrieving entities that meet constraints defined by logical formulas. In this project, we extend these with **soft constraints** that allow specifying that in addition to the logical constraints, an entity should be "like" or "unlike" specific exemplary entities:
 
 ![](img/soft-constraints.png)
@@ -24,7 +28,7 @@ url={https://openreview.net/forum?id=Qb6vIM7MxE}
 
 ### 1. Installation
 
-Use the following to create and environment with `conda` and install the requirements:
+Use the following to create an environment with `conda` and install the requirements:
 
 ```bash
 conda create -n nqr python=3.12
@@ -55,6 +59,14 @@ The same Zenodo record also contains pretrained artifacts and raw experimental r
 - `fb15k237-betae_10_0.0002_nonforced.tar.gz`
 - `hetionet_10_0.001_nonforced.tar.gz`
 - `results.tar.gz`
+
+After extraction, the artifacts are organized as follows:
+
+```text
+data/        Extended datasets with soft constraints
+neural_adj/  Pretrained reranking artifacts
+results/     Raw outputs used for the paper figures and tables
+```
 
 Extract them with:
 
