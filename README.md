@@ -34,11 +34,38 @@ pip install -r requirements.txt
 
 ### 2. Download the data
 
-The following are available upon request:
+In our work, we introduce query-answering datasets extended with soft entity constraints. We provide these datasets on Zenodo:
 
-- Datasets
-- Pretrained link prediction models
-- Our raw experimental results data
+https://doi.org/10.5281/zenodo.20847352
+
+Download and extract the dataset archives from the repository root:
+
+- `fb15k237-betae.tar.gz`
+- `hetionet.tar.gz`
+
+```bash
+mkdir -p data
+
+tar xzf fb15k237-betae.tar.gz -C data
+tar xzf hetionet.tar.gz -C data
+```
+
+The same Zenodo record also contains pretrained artifacts and raw experimental results, which can be used to reproduce the experiments and figures without retraining:
+
+- `fb15k237-betae_10_0.0002_nonforced.tar.gz`
+- `hetionet_10_0.001_nonforced.tar.gz`
+- `results.tar.gz`
+
+Extract them with:
+
+```bash
+mkdir -p neural_adj
+
+tar xzf fb15k237-betae_10_0.0002_nonforced.tar.gz -C neural_adj
+tar xzf hetionet_10_0.001_nonforced.tar.gz -C neural_adj
+
+tar xzf results.tar.gz
+```
 
 ### 3. Reproducing our experiments
 
